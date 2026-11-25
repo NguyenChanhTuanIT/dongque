@@ -1,0 +1,3 @@
+# The site is public.
+User-agent: *
+Allow: /
