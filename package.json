@@ -1,29 +1,26 @@
 {
-  "name": "summertime-port",
+  "name": "summertime",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "A clean vanilla TypeScript port of SummerTime, with P2P multiplayer over iroh-gossip.",
+  "description": "SummerTime: interactive WebGL scene with an admin panel (Firebase) and a WebSocket multiplayer server.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview",
-    "build:wasm": "bash scripts/build-wasm.sh"
+    "server": "node server/index.mjs"
   },
   "dependencies": {
     "firebase": "^13.4.0",
     "gsap": "3.11.3",
-    "summer-iroh": "file:multiplayer/browser-wasm/pkg",
     "three": "0.148.0",
     "three-mesh-bvh": "0.5.24"
   },
   "devDependencies": {
-    "@swc/core": "1.15.47",
     "@types/three": "0.148.0",
     "typescript": "5.9.3",
     "vite": "^5.4.0",
-    "vite-plugin-top-level-await": "^1.5.0",
-    "vite-plugin-wasm": "^3.4.1"
+    "ws": "8.18.0"
   }
 }

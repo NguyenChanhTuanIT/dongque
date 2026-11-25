@@ -16,6 +16,9 @@
 
     #ifdef IS_CHARACTER
         varying float vSeed;
+        #ifdef CHAR_VERTEX_COLOR
+            varying vec3 vCharColor;
+        #endif
     #endif
 
     #ifdef IS_TERRAIN
@@ -221,6 +224,12 @@
                     float rampID = 58.0 + step(0.8, fract(vRand.x + vRand.y));
                     diffuseSpecular = texture2D(tRamp, vec2(_shadow0, getRamp(rampID))).rgb;
                     diffuseSpecular *= fit(vUv.y, 0.0, 0.75, 1.0, 1.25);
+                #elif defined(IS_CHARACTER) && defined(CHAR_VERTEX_COLOR)
+                    // glTF characters: two-tone toon shading of the model's own
+                    // colors, shadows slightly cool like the ramps.
+                    vec3 lit = vCharColor;
+                    vec3 shade = vCharColor * vec3(0.58, 0.6, 0.72);
+                    diffuseSpecular = mix(shade, lit, smoothstep(0.32, 0.5, rampX));
                 #elif defined(IS_CHARACTER)
                     if (vColorInfo.y < 0.01) { // not changing parts
                         float rampY = getRamp(vColorInfo.r);

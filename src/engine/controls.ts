@@ -1,5 +1,6 @@
-// Player character controls: keyboard (WASD/arrows/space), mouse drag,
-// touch joystick (the on-screen circles UI), tap/double-tap jump, gamepad.
+// Player character controls: keyboard (WASD/arrows/space, Shift sprint,
+// E / 1..9 emotes), mouse drag, touch joystick (the on-screen circles UI; full push
+// sprints), tap/double-tap jump, gamepad (stick, A jump, RB/L3 sprint, Y emote).
 // Port of the original `controls` + `circles` classes.
 
 import { Group, Mesh, PlaneGeometry, ShaderMaterial, Vector2, Vector3 } from 'three';
@@ -172,6 +173,9 @@ export class Circles extends Group {
 // Controls
 // ---------------------------------------------------------------------------
 
+/** Emote slots beyond 1..9 (keep in sync with the `key` of scene/emotes.ts EMOTES). */
+const EXTRA_EMOTE_KEYS: Record<string, number> = { Digit0: 10, KeyQ: 11, KeyH: 12 };
+
 export interface ControlsOptions {
   mouseCenter?: Vector2;
   mouseToggleCb?: (active: boolean) => void;
@@ -197,6 +201,11 @@ export class Controls {
   private _browserActive = validFocus();
   private _enabled = false;
   private _v = new Vector3();
+  private _sprintKey = false;
+  private _sprintMultiplier = 1.6;
+  private _emoteGamepadLatch = false;
+  /** True while the player holds a sprint input and is moving (read by the engine). */
+  sprinting = false;
 
   constructor(characters: CharacterInstance, options: ControlsOptions = {}) {
     this._characters = characters;
@@ -234,8 +243,26 @@ export class Controls {
       case 'Space':
         this._requestJump(down);
         break;
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        this._sprintKey = down;
+        break;
+      case 'KeyE':
+        if (down && !e.repeat) events.emit('webgl_character_emote', 1);
+        break;
+      default: {
+        // Emote slots (scene/emotes.ts EMOTES order): 1..9, then 0, Q, H.
+        if (!down || e.repeat) break;
+        const slot = /^Digit[1-9]$/.test(e.code) ? Number(e.code.slice(5)) : EXTRA_EMOTE_KEYS[e.code];
+        if (slot) events.emit('webgl_character_emote', slot);
+      }
     }
   };
+
+  /** Move-force multiplier while sprinting (1 = sprint disabled). */
+  setSprintMultiplier(multiplier: number) {
+    this._sprintMultiplier = Math.max(1, multiplier);
+  }
 
   private _requestJump(down: boolean) {
     if (down) {
@@ -317,6 +344,7 @@ export class Controls {
     this._v.z += this._touchDelta.y;
 
     const pad = navigator.getGamepads?.()[0];
+    let padSprint = false;
     if (this._enabled && pad) {
       if (pad.axes.length > 0) {
         this._v.x += gamepadAxisNormalize(pad.axes[0], -1);
@@ -329,13 +357,27 @@ export class Controls {
         this._jumpRequestGamepad = false;
         this._requestJump(false);
       }
+      // RB / R1 or left-stick click sprints; Y / △ toggles the emote.
+      padSprint = Boolean(pad.buttons[5]?.pressed || pad.buttons[10]?.pressed);
+      const emote = Boolean(pad.buttons[3]?.pressed);
+      if (emote && !this._emoteGamepadLatch) events.emit('webgl_character_emote', 1);
+      this._emoteGamepadLatch = emote;
     }
 
-    return this._v.clampLength(-1, 1);
+    this._v.clampLength(-1, 1);
+    // Touch: pushing the joystick to the rim sprints.
+    const touchSprint = this._isTouching && this._touchDelta.length() > 0.97;
+    this.sprinting =
+      this._sprintMultiplier > 1 &&
+      (this._sprintKey || padSprint || touchSprint) &&
+      this._v.lengthSq() > 1e-6;
+    return this.sprinting ? this._v.multiplyScalar(this._sprintMultiplier) : this._v;
   }
 
   private _endInteraction() {
     this._moveKeysPressed.fill(false);
+    this._sprintKey = false;
+    this.sprinting = false;
     this._requestJump(false);
     this._jumpRequestGamepad = false;
     this._onTouchEnd();

@@ -18,6 +18,9 @@ import { Houses, Warehouses, Machines, Lightposts, Parasols, Castles, Blockers }
 import { UFO, Alien, Cats, Sloth, Sign, Gossip } from './setpieces';
 import { CharactersModule } from './characters';
 import type { MainController } from './mainController';
+import { getConfig, watchConfig } from '../config/store';
+import type { SceneConfig, ToggleableModule } from '../config/schema';
+import type { ShaderMaterial } from 'three';
 
 gsap.registerPlugin(CustomEase);
 
@@ -55,7 +58,7 @@ export class EnvironmentScene extends BaseScene {
 
   private async init() {
     this.setupCamera();
-    this.audioController = new AudioController(this, 0.25);
+    this.audioController = new AudioController(this, getConfig().audio.volume);
 
     type ModuleCtor = new (scene: EnvironmentScene) => SceneModule;
     const modules: Array<[string, ModuleCtor]> = [
@@ -84,8 +87,11 @@ export class EnvironmentScene extends BaseScene {
         ['sloth', Sloth],
         ['gossip', Gossip],
       ];
+    // Modules switched off in the remote config are never constructed.
+    const enabled = getConfig().features.modules as Record<string, boolean>;
+    const active = modules.filter(([name]) => enabled[name as ToggleableModule] !== false);
     await Promise.all(
-      modules.map(([name, Module]) => {
+      active.map(([name, Module]) => {
         (this as any)[name] = new Module(this);
         return (this as any)[name].ready;
       }),
@@ -93,6 +99,7 @@ export class EnvironmentScene extends BaseScene {
 
     this.setupLights();
     (this.sea.mesh as any).addReflectedObject(this.sky.mesh);
+    watchConfig(this.applyConfig);
     this.ready.resolve();
   }
 
@@ -122,11 +129,24 @@ export class EnvironmentScene extends BaseScene {
       csmBoundingSphere: (this.characters.mesh._collisionPhysics as any)._colliderMesh?.geometry?.boundingSphere,
       csmNear: 50,
       csmLODLevel: client.oldIphone ? 1 : 3,
-      skipCSMMeshes: [this.characters.mesh, this.sky.mesh, this.sea.mesh, this.birds.mesh],
+      skipCSMMeshes: [this.characters.mesh, this.sky.mesh, this.sea.mesh, this.birds?.mesh].filter(Boolean),
     });
     sun.shadow.normalBias = 0.07;
     this.add(sun);
   }
+
+  /** Live-applied config: grass colors, master volume. (Scene tint and
+   *  brightness live in the final pass, see MainController.) The ramp shader
+   *  ignores light color/intensity, so lights are not configurable. */
+  private applyConfig = (config: SceneConfig) => {
+    const { terrain, audio } = config;
+
+    const terrainMaterial = this.terrain.mesh.material as ShaderMaterial;
+    terrainMaterial.uniforms.grassColor1.value.set(terrain.grassColor1);
+    terrainMaterial.uniforms.grassColor2.value.set(terrain.grassColor2);
+
+    this.audioController.setVolume(audio.volume);
+  };
 
   playIntroAnimation() {
     this.camera.followSphericalZoom = 12;

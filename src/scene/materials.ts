@@ -100,6 +100,8 @@ export interface PhongMaterialOptions {
   isBlocker?: boolean;
   isSign?: boolean;
   isCharacters?: boolean;
+  /** Characters colored by a per-vertex `charColor` (glTF models) instead of the ramp rows. */
+  charVertexColors?: boolean;
   isTerrain?: boolean;
   isTree?: boolean;
   isBush?: boolean;
@@ -146,6 +148,7 @@ export function phongMaterial(options: PhongMaterialOptions = {}): ShaderMateria
 
   if (options.isCharacters) {
     defines.IS_CHARACTER = 1;
+    if (options.charVertexColors) defines.CHAR_VERTEX_COLOR = 1;
     material.shadowSide = 0; // FrontSide
   }
   if (options.isTerrain) {
@@ -218,6 +221,20 @@ export function phongMaterial(options: PhongMaterialOptions = {}): ShaderMateria
 export function depthCharsMaterial(): MeshDepthMaterial {
   const material = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
   material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+
+        // Character outfits (src/scene/appearance.ts): every vertex belongs to
+        // a part; each instance has a bitmask of the parts it wears.
+        attribute float partId;
+        attribute float instanceParts;
+        float partVisible(float part, float mask) {
+            return mod(floor(mask / exp2(part)), 2.0); // bit number "part" of an exact integer
+        }
+`)
+      // After skinning, like the main character shader (glsl/vertex.glsl).
+      .replace('#include <skinning_vertex>', `#include <skinning_vertex>
+        transformed *= partVisible(partId, instanceParts);`);
     shader.vertexShader = shader.vertexShader.replace(
       '#include <skinning_pars_vertex>',
       `

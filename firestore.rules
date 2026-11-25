@@ -1,0 +1,64 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Scene config: the game reads it anonymously; only admins write it.
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin()
+        && request.resource.data.keys().hasOnly(
+             ['ui', 'features', 'player', 'audio', 'lighting', 'terrain', 'secrets', 'updatedAt', 'updatedBy']);
+    }
+
+    // Admin allow-list (document id = Firebase Auth uid). A signed-in user may
+    // check their own entry; admins see the whole list, can grant admin to
+    // others and revoke it from anyone but themselves (the first admin is
+    // still created from the Firebase Console).
+    match /admins/{uid} {
+      allow read: if (request.auth != null && request.auth.uid == uid) || isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(['grantedBy', 'grantedAt'])
+        && request.resource.data.grantedAt == request.time;
+      allow delete: if isAdmin() && request.auth.uid != uid;
+      allow update: if false;
+    }
+
+    // Player profiles, written by the game on sign-in / name change
+    // (src/social/auth.ts). Players own email/name/timestamps; only admins
+    // touch the ban fields. The relay reads `banned` with the player's own
+    // token (server/realm.mjs).
+    match /users/{uid} {
+      function isSelf() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+      function validProfile(d) {
+        return d.email is string && d.email == request.auth.token.email
+          && d.name is string && d.name.size() <= 64;
+      }
+
+      allow read: if isSelf() || isAdmin();
+      allow create: if isSelf()
+        && request.resource.data.keys().hasOnly(['email', 'name', 'createdAt', 'lastLoginAt'])
+        && validProfile(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.lastLoginAt == request.time;
+      allow update: if (isSelf()
+          && resource.data.get('banned', false) == false
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email', 'name', 'lastLoginAt'])
+          && validProfile(request.resource.data)
+          && request.resource.data.lastLoginAt is timestamp)
+        || (isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['banned', 'banReason', 'bannedAt', 'bannedBy'])
+          && request.resource.data.banned is bool
+          && request.resource.data.get('banReason', '') is string
+          && request.resource.data.get('banReason', '').size() <= 200);
+      allow delete: if false;
+    }
+  }
+}

@@ -14,6 +14,7 @@ import { events } from '../core/events';
 import { engine, globalUniforms } from '../engine/globals';
 import { EnvironmentScene } from './environmentScene';
 import { BaseShader, IntroShader } from './shaders-post';
+import { watchConfig } from '../config/store';
 
 function createFullscreenTriangle(): Mesh {
   const geometry = new BufferGeometry();
@@ -40,6 +41,13 @@ export class MainController {
     this.mainMesh = createFullscreenTriangle();
     this.mainMesh.frustumCulled = false;
     this.mainMesh.name = 'Main triangle mesh';
+    watchConfig(({ lighting }) => {
+      const u = this.baseMaterial.uniforms;
+      // Raw display values: the tint is applied after grading, in output space.
+      u.uTint.value.setHex(parseInt(lighting.tint.slice(1), 16), 'srgb-linear' as any); // = LinearSRGBColorSpace
+      u.uBrightness.value = lighting.brightness;
+      u.uLUTIntensity.value = lighting.gradeIntensity;
+    });
     void this.init();
   }
 

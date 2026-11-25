@@ -119,6 +119,14 @@ export class AudioController {
     }
   };
 
+  /** Change the master volume (applied smoothly when audible). */
+  setVolume(volume: number): void {
+    this._defaultVolume = Math.max(0, Math.min(1, volume));
+    if (this._hasLoaded && this._listener && !this._muted && this._visibleState) {
+      this._listener.gain.gain.setTargetAtTime(this._defaultVolume, this._listener.context.currentTime, 0.5);
+    }
+  }
+
   private _muteToggle = () => {
     this._muted = !this._muted;
     events.emit('webgl_audio_update_mute', this._muted);
@@ -135,6 +143,49 @@ export class AudioController {
       for (const loop of this._syncLoops) loop.syncLoop(clock.time);
       this._syncGSAPOffset = drift;
     }
+  }
+
+  private _optional = new Map<string, Promise<AudioBuffer | null>>();
+
+  /** Lazily load an optional sound file; null when it is missing or undecodable. */
+  private _optionalBuffer(url: string): Promise<AudioBuffer | null> {
+    let p = this._optional.get(url);
+    if (!p) {
+      const context = this._listener!.context;
+      p = fetch(url)
+        .then((res) => (res.ok ? res.arrayBuffer() : null))
+        .then((data) => (data ? context.decodeAudioData(data) : null))
+        .catch(() => null);
+      this._optional.set(url, p);
+    }
+    return p;
+  }
+
+  /** Play an optional one-shot sound (e.g. NPC laughter) once audio has started. */
+  async playOnce(url: string, volume: number): Promise<void> {
+    if (!this._hasLoaded || !this._listener || volume <= 0) return;
+    const buffer = await this._optionalBuffer(url);
+    if (!buffer) return;
+    const audio = new Audio(this._listener);
+    audio.setBuffer(buffer);
+    audio.setVolume(Math.min(1, volume));
+    audio.play();
+  }
+
+  /** Start an optional looping sound; null until audio has started or if the file is missing. */
+  async loopSound(url: string): Promise<{ setVolume(volume: number): void; stop(): void } | null> {
+    if (!this._hasLoaded || !this._listener) return null;
+    const buffer = await this._optionalBuffer(url);
+    if (!buffer) return null;
+    const audio = new Audio(this._listener);
+    audio.setBuffer(buffer);
+    audio.setLoop(true);
+    audio.setVolume(0);
+    audio.play();
+    return {
+      setVolume: (volume: number) => audio.setVolume(Math.max(0, Math.min(1, volume))),
+      stop: () => audio.stop(),
+    };
   }
 
   playSound = (name: string) => {

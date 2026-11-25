@@ -38,6 +38,9 @@ export class BaseShader extends ShaderMaterial {
         uLUTIntensity: { value: 1 },
         uOverlayColor: { value: new Color('#FFF9EE') },
         uOverlayTransition: { value: 0 },
+        // Remote-config grade (src/config): multiplied after the LUT.
+        uTint: { value: new Color('#ffffff') },
+        uBrightness: { value: 1 },
       },
       vertexShader: fullscreenVS,
       fragmentShader: `
@@ -50,6 +53,8 @@ export class BaseShader extends ShaderMaterial {
         uniform float uLUTIntensity;
         uniform vec3 uOverlayColor;
         uniform float uOverlayTransition;
+        uniform vec3 uTint;
+        uniform float uBrightness;
 
         varying vec2 vUv;
 
@@ -58,6 +63,7 @@ export class BaseShader extends ShaderMaterial {
 
           // 3D lut
           vec3 col = apply3DLUTTetrahedral(scene.rgb, tLUT, uLUTSize, uLUTIntensity);
+          col *= uTint * uBrightness;
 
           // white transition
           vec3 color = mix(col, uOverlayColor, uOverlayTransition * 0.9);

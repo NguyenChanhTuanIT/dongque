@@ -1,17 +1,63 @@
-import { defineConfig } from 'vite';
-import wasm from 'vite-plugin-wasm';
-import topLevelAwait from 'vite-plugin-top-level-await';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { fileURLToPath } from 'node:url';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createRealm } from './server/realm.mjs';
+import { createAdminApi } from './server/admin-api.mjs';
 
-export default defineConfig({
-  plugins: [wasm(), topLevelAwait()],
-  // The P2P wasm package must not be pre-bundled by Vite's dep optimizer.
-  optimizeDeps: {
-    exclude: ['summer-iroh'],
-  },
+/**
+ * Runs the multiplayer relay (server/realm.mjs) inside `vite dev` and
+ * `vite preview`: WebSocket at /mp, online counts at /health and the admin API
+ * at /admin/api/*, on the same port as the page, so no second process is needed during development.
+ */
+function multiplayerRelay(firebaseProjectId: string): Plugin {
+  let realm: ReturnType<typeof createRealm> | null = null;
+  let adminApi: ReturnType<typeof createAdminApi> | null = null;
+  const admin = (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    if (!adminApi?.(req, res)) next();
+  };
+  const health = (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    if (req.url !== '/health' || !realm) return next();
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.end(JSON.stringify({ ok: true, ...realm.stats() }));
+  };
+  const attach = (httpServer: import('node:http').Server | null) => {
+    realm?.close();
+    realm = createRealm({ firebaseProjectId });
+    adminApi = createAdminApi({ realm, projectId: firebaseProjectId });
+    httpServer?.on('upgrade', (req, socket, head) => realm?.handleUpgrade(req, socket, head));
+    httpServer?.on('close', () => realm?.close());
+  };
+  return {
+    name: 'summertime-multiplayer',
+    configureServer(server) {
+      attach(server.httpServer as import('node:http').Server | null);
+      server.middlewares.use(health);
+      server.middlewares.use(admin);
+    },
+    configurePreviewServer(server) {
+      attach(server.httpServer as import('node:http').Server);
+      server.middlewares.use(health);
+      server.middlewares.use(admin);
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => ({
+  // Same project as the client: the relay verifies Google sign-in tokens for name changes.
+  plugins: [multiplayerRelay(loadEnv(mode, process.cwd(), 'VITE_').VITE_FIREBASE_PROJECT_ID ?? '')],
   publicDir: 'public',
   build: {
     target: 'es2022',
     sourcemap: false,
+    rollupOptions: {
+      // Two pages: the game and the config admin panel.
+      input: {
+        index: fileURLToPath(new URL('./index.html', import.meta.url)),
+        admin: fileURLToPath(new URL('./admin.html', import.meta.url)),
+      },
+    },
   },
   server: {
     host: true,
@@ -21,4 +67,4 @@ export default defineConfig({
     host: true,
     port: 4173,
   },
-});
+}));

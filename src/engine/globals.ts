@@ -252,8 +252,17 @@ class Engine {
   }
 }
 
+/** Typing in a text field (chat, name) must not move or emote the character. */
+function isTyping(e: KeyboardEvent): boolean {
+  const t = e.target as HTMLElement | null;
+  return !!t && (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
+}
+
 function initKeys() {
-  window.addEventListener('keydown', (e) => events.emit('keydown', e));
+  window.addEventListener('keydown', (e) => {
+    if (!isTyping(e)) events.emit('keydown', e);
+  });
+  // Key releases always pass, so a key held before focusing a field does not stick.
   window.addEventListener('keyup', (e) => events.emit('keyup', e));
 }
 

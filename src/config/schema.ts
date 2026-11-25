@@ -38,6 +38,17 @@ export interface SceneConfig {
   };
   features: {
     multiplayer: boolean;
+    /** ws(s):// URL of the multiplayer server; empty = same host, path /mp. */
+    multiplayerUrl: string;
+    /** Client-side NPC groups (scene/npcs.ts), shown / hidden live. */
+    npcs: {
+      /** Two kids sitting arm in arm on the beach, watching the sea. */
+      seaCouple: boolean;
+      /** Two kids flying kites, strolling on the beach, laughing. */
+      kiteFlyers: boolean;
+      /** A kid playing guitar and singing at the far end of the road. */
+      guitarist: boolean;
+    };
     modules: Record<ToggleableModule, boolean>;
   };
   player: {
@@ -45,16 +56,22 @@ export interface SceneConfig {
     spawnRadius: number;
     moveForce: number;
     jumpForce: number;
+    /** Speed multiplier while sprinting (Shift / RB / full joystick); 1 = off. */
+    sprintMultiplier: number;
+    /** Seconds standing still before the automatic bored pose; 0 = never. */
+    idleEmoteSeconds: number;
   };
   audio: {
     volume: number;
   };
+  /** Final-pass grade (the toon ramp shader ignores light color/intensity). */
   lighting: {
-    hemiSkyColor: string;
-    hemiGroundColor: string;
-    hemiIntensity: number;
-    sunColor: string;
-    sunIntensity: number;
+    /** Color multiplied over the whole frame (#ffffff = none). */
+    tint: string;
+    /** Overall brightness multiplier (1 = original). */
+    brightness: number;
+    /** Strength of the original color-grading LUT (0 = off, 1 = original). */
+    gradeIntensity: number;
   };
   terrain: {
     grassColor1: string;
@@ -79,6 +96,8 @@ export const DEFAULT_CONFIG: SceneConfig = {
   },
   features: {
     multiplayer: true,
+    multiplayerUrl: '',
+    npcs: { seaCouple: true, kiteFlyers: true, guitarist: true },
     modules: Object.fromEntries(TOGGLEABLE_MODULES.map((m) => [m, true])) as Record<ToggleableModule, boolean>,
   },
   player: {
@@ -86,16 +105,16 @@ export const DEFAULT_CONFIG: SceneConfig = {
     spawnRadius: 4,
     moveForce: 0.005,
     jumpForce: 0.2,
+    sprintMultiplier: 1.6,
+    idleEmoteSeconds: 60,
   },
   audio: {
     volume: 0.25,
   },
   lighting: {
-    hemiSkyColor: '#33434f',
-    hemiGroundColor: '#737575',
-    hemiIntensity: 0.7,
-    sunColor: '#ffffff',
-    sunIntensity: 1,
+    tint: '#ffffff',
+    brightness: 1,
+    gradeIntensity: 1,
   },
   terrain: {
     grassColor1: '#558f6e',

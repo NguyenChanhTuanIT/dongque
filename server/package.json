@@ -1,0 +1,16 @@
+{
+  "name": "summertime-server",
+  "private": true,
+  "type": "module",
+  "description": "Multiplayer WebSocket relay + static server for SummerTime.",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "8.18.0"
+  }
+}

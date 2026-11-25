@@ -9,6 +9,8 @@ export const CONFIG_COLLECTION = 'config';
 export const CONFIG_DOC = 'scene';
 /** Collection whose document ids are the uids allowed to write the config. */
 export const ADMINS_COLLECTION = 'admins';
+/** Player profiles (document id = uid): email, name, sign-in times, ban state. */
+export const USERS_COLLECTION = 'users';
 
 const env = import.meta.env;
 

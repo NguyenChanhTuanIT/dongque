@@ -5,6 +5,7 @@ import { MainController } from './scene/mainController';
 import { engine } from './engine/globals';
 import { clock } from './engine/clock';
 import { UiController } from './components/ui';
+import { loadConfig, watchConfig } from './config/store';
 import './styles.css';
 
 const ui = new UiController(document.getElementById('app') ?? document.body);
@@ -14,7 +15,7 @@ CustomEase.create('inOut2', 'M0,0 C0.56,0 0,1 1,1');
 CustomEase.create('inOut3', 'M0,0 C0.6,0 0,1 1,1');
 CustomEase.create('inOut4', 'M0,0 C0.4,0 -0.06,1 1,1');
 
-function start() {
+async function start() {
   if (!client.capabilities.webgl) {
     ui.showUnsupported();
     return;
@@ -45,6 +46,11 @@ function start() {
   events.on('webgl_character_update_color', onColor);
   events.on('keyup', onKeyUp);
 
+  // Remote config (Firestore) must be in before the scene modules read it;
+  // the loader stays on screen meanwhile and defaults apply on any failure.
+  await loadConfig();
+  watchConfig((config) => ui.applyConfig(config));
+
   const controller = new MainController();
   if (new URLSearchParams(window.location.search).has('audit')) {
     (window as any).__summerAudit = { engine, controller };
@@ -66,4 +72,4 @@ function start() {
   }, { once: true });
 }
 
-start();
+void start();

@@ -79,6 +79,18 @@
     #ifdef IS_CHARACTER
         attribute float instanceSeed;
         varying float vSeed;
+        #ifdef CHAR_VERTEX_COLOR
+            attribute vec3 charColor;
+            varying vec3 vCharColor;
+        #endif
+
+        // Character outfits (src/scene/appearance.ts): every vertex belongs to
+        // a part; each instance has a bitmask of the parts it wears.
+        attribute float partId;
+        attribute float instanceParts;
+        float partVisible(float part, float mask) {
+            return mod(floor(mask / exp2(part)), 2.0); // bit number "part" of an exact integer
+        }
     #endif
 
     #include <shadowmap_pars_vertex>
@@ -92,9 +104,18 @@
         #include <normal_vertex>
         #include <begin_vertex>
         #include <skinning_vertex>
+        #ifdef IS_CHARACTER
+            // Collapsed = invisible. After skinning: collapsed before, each vertex
+            // would be moved by its own bones and hidden parts would show as
+            // stretched slivers in strong poses (jumping, sitting, lying).
+            transformed *= partVisible(partId, instanceParts);
+        #endif
 
         #ifdef IS_CHARACTER
             vSeed = instanceSeed;
+            #ifdef CHAR_VERTEX_COLOR
+                vCharColor = charColor;
+            #endif
         #endif
 
         #ifdef RANDOM_ATTRIB

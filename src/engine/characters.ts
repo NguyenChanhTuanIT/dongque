@@ -5,6 +5,7 @@
 import {
   AnimationClip,
   AnimationMixer,
+  type Bone,
   DataTexture,
   FloatType,
   Frustum,
@@ -29,9 +30,12 @@ import type { FollowCamera } from './camera';
 import { Controls } from './controls';
 import { CollisionPhysics } from './physics';
 import { quaternionFromSpherical } from './quaternion';
-import { P2PConnection, type P2PClientData } from './multiplayer/iroh';
+import type { MultiplayerConnection, P2PClientData } from './multiplayer/types';
+import type { Profile } from './multiplayer/socket';
 
 const MAX_CHARS = 128;
+/** Character ids of client-side NPCs (never collide with relay ids, which are numbers). */
+const NPC_PREFIX = 'npc:';
 const SECURE_EPS = 1e-4;
 
 function secureLerp(v: number): number {
@@ -99,7 +103,25 @@ export interface CharacterOptions {
   radiusPercentage?: number;
   floorDetectInclination?: number;
   positionForce?: number;
+  jumpForce?: number;
   damp?: number;
+  /** Join the multiplayer room. Off = no network at all. */
+  multiplayer?: boolean;
+  /** WebSocket relay URL (server/realm.mjs); empty = same host, path /mp. */
+  multiplayerUrl?: string;
+  /** Emote slots (keys 1..n / menu): animation state `a` per slot (clip index - 1). */
+  emoteSlots?: number[];
+  /** Seconds before an emote state stops by itself (absent / 0 = until moving). */
+  emoteDurations?: Record<number, number>;
+  /** 'While walking' clips: emote state → clip index (upper body + run legs). */
+  walkingEmoteClips?: Array<{ state: number; clip: number }>;
+  /** Emote states that keep playing while the player moves. */
+  mobileEmotes?: number[];
+  /** Extra clips bound to a state (e.g. NPC-only poses). */
+  extraClips?: Array<{ state: number; clip: number }>;
+  /** Called for every character instance right after its pose is baked
+   *  (bones hold that instance's pose in model space): attach props here. */
+  onInstancePose?: (character: CharacterLocal, instance: number, bones: Bone[], stateWeight: (state: number) => number) => void;
   initialPosition?: number[];
   initialRadius?: number;
   camera: FollowCamera;
@@ -125,6 +147,21 @@ export interface CharacterOptions {
 export class CharacterSkinnedMesh extends InstancedMesh {
   skeleton!: ReturnType<typeof cloneWithSkeleton> extends never ? never : any;
   actions: Array<{ setEffectiveWeight(w: number): void; setEffectiveTimeScale(s: number): void; enabled: boolean; play(): void }> = [];
+  /** Run-cycle speed-up applied to sprinting characters (= sprint multiplier). */
+  sprintAnimScale = 1.6;
+
+  /** Blend weight of an animation state (its still + walking clips). */
+  stateWeight(local: CharacterLocal, state: number): number {
+    let w = 0;
+    local.animationWeights.forEach((weight, i) => {
+      if (i > 1 && (this.clipStates[i] ?? i - 1) === state) w += weight;
+    });
+    return w;
+  }
+  /** Animation state that activates clip i (default i - 1). */
+  clipStates: number[] = [];
+  /** Emote state → index of its 'while walking' clip. */
+  walkingClips = new Map<number, number>();
 
   private _mixer: AnimationMixer;
   private _boneMatrix = new Matrix4();
@@ -181,14 +218,33 @@ export class CharacterSkinnedMesh extends InstancedMesh {
     const speedFactor = fit(local.velocityHorizontal, 0.001, 0.045, 1, 0);
     weights[0] = secureLerp(lerp(weights[0], speedFactor, frameLerp));
     weights[1] = 1 - weights[0];
+    // Sprinting: play this instance's clips faster (by advancing its own
+    // phase offset, so the shared mixer clock never jumps) so feet keep up.
+    if (local.userData.sprint && this.sprintAnimScale > 1) {
+      local.animationOffset += clock.delta * 0.001 * (this.sprintAnimScale - 1) * weights[1];
+    }
+    // Clip i plays for state clipStates[i] (default i - 1). Emotes with a
+    // 'while walking' clip split their weight between the still clip and the
+    // walking one by speed, like idle / run.
+    const moving = 1 - speedFactor;
     for (let i = 2; i < weights.length; i++) {
-      const active = local.userData.a === i - 1;
-      weights[i] = secureLerp(lerp(weights[i], active ? 1 : 0, frameLerp));
+      const state = this.clipStates[i] ?? i - 1;
+      let target = 0;
+      if (local.userData.a === state) {
+        if (!this.walkingClips.has(state)) target = 1;
+        else target = this.walkingClips.get(state) === i ? moving : 1 - moving;
+      }
+      weights[i] = secureLerp(lerp(weights[i], target, frameLerp));
     }
 
     this.actions.forEach((action, i) => {
       let otherWeight = 0;
-      for (let w = weights.length - 1; w > Math.max(1, i); w--) otherWeight += weights[w];
+      const state = this.clipStates[i] ?? i - 1;
+      for (let w = weights.length - 1; w > Math.max(1, i); w--) {
+        // the still / walking pair of one emote share the weight, not stack
+        if (i > 1 && (this.clipStates[w] ?? w - 1) === state) continue;
+        otherWeight += weights[w];
+      }
       const base = 1 - clamp(otherWeight, 0, 1);
       const weight = weights[i] * base;
       action.enabled = weight > 0;
@@ -238,7 +294,7 @@ export class Characters extends CharacterSkinnedMesh {
   _camera!: FollowCamera;
 
   private _charactersObjects = new Map<string, CharacterLocal>();
-  private _connection!: P2PConnection;
+  private _connection!: MultiplayerConnection;
   private _positionCharLerp: number;
   private _rotationCharLerp: number;
   private _animationCharLerp: number;
@@ -247,7 +303,14 @@ export class Characters extends CharacterSkinnedMesh {
   private _customAttribUpdate: CharacterOptions['customAttribUpdate'];
   private _inactiveTime: number;
   private _inactiveMilliseconds = 0;
-  private _dataUpdate = { p: [0, 0, 0], r: [0, 0], a: 0 } as P2PClientData;
+  private _emoteSlots: number[] = [2];
+  private _emoteDurations: Record<number, number> = {};
+  private _emoteUntil = 0;
+  private _mobileEmotes = new Set<number>();
+  private _onInstancePose: CharacterOptions['onInstancePose'];
+  private _outfit = new Uint8Array(0);
+  private _profile: Profile | null = null;
+  private _dataUpdate = { p: [0, 0, 0], r: [0, 0], a: 0, sprint: false } as P2PClientData;
 
   private _v0 = new Vector3();
   private _v1 = new Vector3();
@@ -292,11 +355,25 @@ export class Characters extends CharacterSkinnedMesh {
     this._controls = new Controls(this as unknown as CharacterInstance, {
       mouseToggleCb: (active) => events.emit('webgl_mouse_toggle', active),
     });
+    this._emoteSlots = options.emoteSlots ?? [2];
+    this._mobileEmotes = new Set(options.mobileEmotes ?? []);
+    for (const { state, clip } of options.walkingEmoteClips ?? []) {
+      this.walkingClips.set(state, clip);
+      this.clipStates[clip] = state;
+    }
+    for (const { state, clip } of options.extraClips ?? []) this.clipStates[clip] = state;
+    this._onInstancePose = options.onInstancePose;
+    this._emoteDurations = options.emoteDurations ?? {};
+    events.on('webgl_character_emote', this._toggleEmote);
+    events.on('mp_send_chat', this._sendChat);
+    events.on('mp_reward', this._sendReward);
+    events.on('mp_profile', this._setProfile);
     this._collisionPhysics = new CollisionPhysics(this as unknown as CharacterInstance, {
       colliderMesh: options.colliderMesh,
       radiusPercentage: options.radiusPercentage,
       floorDetectInclination: options.floorDetectInclination,
       positionForce: options.positionForce,
+      jumpForce: options.jumpForce,
       damp: options.damp,
       onCollisionsReady: () => {
         this._setInitialPosition(options.initialPosition ?? [0, 0, 0], options.initialRadius ?? 2);
@@ -305,14 +382,33 @@ export class Characters extends CharacterSkinnedMesh {
           relativeCameraPosition: options.relativeCameraPosition,
           lookatMeshOffset: options.lookatMeshOffset,
         });
-        // Join the single shared P2P room (iroh-gossip over WebAssembly,
-        // hardcoded room, no server) and mirror remote characters.
-        this._connection = new P2PConnection({
-          data: this._dataUpdate,
-          onConnect: () => this.connected.resolve(),
-          addClient: (id, data) => this._addCharacter(id, data),
-          removeClient: (id) => this._removeCharacter(id),
-          removeAllClients: () => this._removeAllCharacters(),
+        // Join the multiplayer room on our WebSocket relay and mirror remote
+        // characters. Loaded on demand so nothing is fetched when disabled.
+        if (options.multiplayer === false) return;
+        void import('./multiplayer/socket').then(({ SocketConnection, defaultMultiplayerUrl }) => {
+          // Names/chat go out on the event bus with our own id mapped to 'local'
+          // (the key of the local character), so the UI can match characters.
+          const charId = (id: string) => (id === this._connection?.selfId ? 'local' : id);
+          this._connection = new SocketConnection({
+            url: options.multiplayerUrl || defaultMultiplayerUrl(),
+            outfit: () => this._outfit,
+            profile: () => this._profile,
+            data: this._dataUpdate,
+            onConnect: () => {
+              this.connected.resolve();
+              events.emit('mp_connected', this._connection.selfId);
+            },
+            onDisconnect: () => events.emit('mp_disconnected'),
+            addClient: (id, data) => this._addCharacter(id, data),
+            removeClient: (id) => this._removeCharacter(id),
+            removeAllClients: () => this._removeAllCharacters(),
+            onLeave: (id) => events.emit('mp_leave', id),
+            onName: (id, name) => events.emit('mp_name', charId(id), name),
+            onChat: (id, text) => events.emit('mp_chat', charId(id), text),
+            onNotice: (code) => events.emit('mp_notice', code),
+            onWallet: (wallet) => events.emit('mp_wallet', wallet),
+            onKicked: (code) => events.emit('mp_kicked', code),
+          });
         });
       },
     });
@@ -330,6 +426,7 @@ export class Characters extends CharacterSkinnedMesh {
     const move = this._controls.update();
     this._collisionPhysics.update(move, rotationLerp);
     this._localObject.updateMatrixWorld();
+    this._localObject.userData.sprint = this._controls.sprinting;
 
     if (this._localObject.velocity.manhattanLength() < 1e-5) {
       this._inactiveMilliseconds += delta;
@@ -338,7 +435,15 @@ export class Characters extends CharacterSkinnedMesh {
       }
     } else {
       this._inactiveMilliseconds = 0;
-      if (this._localObject.userData.a === 2) this._localObject.userData.a = 0;
+      // Movement input ends the bored pose / emote; the slide to a stop after
+      // releasing the keys does not (jumping switches to airborne in physics).
+      const a = this._localObject.userData.a;
+      if (a >= 2 && this._collisionPhysics.isMoving && !this._mobileEmotes.has(a)) this._localObject.userData.a = 0;
+    }
+    // Timed emotes (wave, clap) end by themselves.
+    if (this._emoteUntil && clock.time >= this._emoteUntil) {
+      this._emoteUntil = 0;
+      if (this._localObject.userData.a >= 2) this._localObject.userData.a = 0;
     }
 
     // publish local state to the realm
@@ -349,6 +454,7 @@ export class Characters extends CharacterSkinnedMesh {
     ];
     this._dataUpdate.a = this._localObject.userData.a;
     this._dataUpdate.seed = this._localObject.userData.seed;
+    this._dataUpdate.sprint = Boolean(this._localObject.userData.sprint);
     if (this._connection) {
       (this._connection as any)._data = this._dataUpdate;
     }
@@ -408,10 +514,47 @@ export class Characters extends CharacterSkinnedMesh {
       remote.updateMatrix();
       this.setMatrixAt(instance++, remote.matrix);
       this._updateAnimations(remote, animLerp);
+      this._onInstancePose?.(remote, instance - 1, this.skeleton.bones, (state) => this.stateWeight(remote, state));
     });
     this.instanceMatrix.needsUpdate = true;
     this.skeleton.boneTexture.needsUpdate = true;
   }
+
+  /** Visit every player character: 'local' first, then remotes by relay id (NPCs excluded). */
+  forEachCharacter(cb: (id: string, object: Object3D) => void) {
+    this._charactersObjects.forEach((object, id) => {
+      if (!id.startsWith(NPC_PREFIX)) cb(id, object);
+    });
+  }
+
+  /**
+   * Client-side NPC: drawn and animated like a player (outfit, emotes,
+   * props), driven by the caller (position, quaternion, velocityHorizontal,
+   * userData.a / seed / outfit), never sent over the network.
+   */
+  addNpc(id: string, data: P2PClientData): CharacterLocal {
+    const key = NPC_PREFIX + id;
+    if (!this._charactersObjects.has(key)) this._addCharacter(key, data);
+    return this._charactersObjects.get(key)!;
+  }
+
+  removeNpc(id: string) {
+    this._removeCharacter(NPC_PREFIX + id);
+  }
+
+  private _sendReward = (action: number, done?: (sent: boolean) => void) => {
+    done?.(this._connection?.sendReward?.(action) ?? false);
+  };
+
+  private _sendChat = (text: string, done?: (sent: boolean) => void) => {
+    done?.(this._connection?.sendChat?.(text) ?? false);
+  };
+
+  /** Account-verified display name, re-claimed on every reconnect; null = guest. */
+  private _setProfile = (profile: Profile | null) => {
+    this._profile = profile;
+    void this._connection?._sendProfile?.(profile);
+  };
 
   private _updateCharacterIDs() {
     let i = 0;
@@ -465,11 +608,14 @@ export class Characters extends CharacterSkinnedMesh {
     this.count = Math.max(1, this.count - 1);
   }
 
+  /** Network reset (disconnect): drop the remote players, keep local + NPCs. */
   private _removeAllCharacters() {
+    const npcs = [...this._charactersObjects].filter(([id]) => id.startsWith(NPC_PREFIX));
     this._charactersObjects.clear();
-    this._updateCharacterIDs();
     this._charactersObjects.set('local', this._localObject);
-    this.count = 1;
+    for (const [id, npc] of npcs) this._charactersObjects.set(id, npc);
+    this._updateCharacterIDs();
+    this.count = this._charactersObjects.size;
   }
 
   private _setInitialPosition(position: number[], radius: number) {
@@ -485,6 +631,58 @@ export class Characters extends CharacterSkinnedMesh {
     this.snap(this._localObject.initialPosition.toArray());
   }
 
+  /** Keys 1..n / E / Y / emote menu: start the emote in `slot` (1-based), or
+   *  stop it when it is already playing. Only while grounded. */
+  private _toggleEmote = (slot = 1) => {
+    const local = this._localObject;
+    if (!this._collisionPhysics.collider) return;
+    const state = this._emoteSlots[slot - 1];
+    if (state === undefined) return;
+    if (local.userData.a === state) {
+      local.userData.a = 0;
+      this._emoteUntil = 0;
+      this._inactiveMilliseconds = 0;
+    } else if (local.userData.a === 0 || local.userData.a >= 2) {
+      // a === 0 means grounded (physics sets 1 while airborne).
+      local.userData.a = state;
+      const duration = this._emoteDurations[state] ?? 0;
+      this._emoteUntil = duration > 0 ? clock.time + duration : 0;
+    }
+  };
+
+  /** Turn the local character toward a world point (e.g. a high-five partner). */
+  faceTowards(x: number, z: number) {
+    const l = this._localObject;
+    const fx = x - l.position.x;
+    const fz = z - l.position.z;
+    if (fx * fx + fz * fz < 1e-6) return;
+    // The kid faces -(sin θ, cos θ) on the ground plane.
+    l.spherical.theta = l.targetSpherical.theta = Math.atan2(-fx, -fz);
+  }
+
+  /** End the current emote after `seconds` (e.g. once a high five landed). */
+  endEmoteIn(seconds: number) {
+    this._emoteUntil = clock.time + seconds;
+  }
+
+  /** Local outfit (item index per slot): shown here and sent to others. */
+  setOutfit(outfit: number[]) {
+    this._outfit = Uint8Array.from(outfit);
+    this._localObject.userData.outfit = [...outfit];
+    this._connection?._sendOutfit?.(this._outfit);
+  }
+
+  /** Seconds standing still before the automatic bored pose (0 = never). */
+  setInactiveTime(seconds: number) {
+    this._inactiveTime = seconds > 0 ? seconds * 1000 : Number.POSITIVE_INFINITY;
+  }
+
+  /** Sprint speed multiplier: drives input force and the run-cycle speed. */
+  setSprintMultiplier(multiplier: number) {
+    this.sprintAnimScale = Math.max(1, multiplier);
+    this._controls.setSprintMultiplier(multiplier);
+  }
+
   snap(position: number[] = [0, 0, 0]) {
     this._localObject.position.fromArray(position);
     this._localObject.velocity.setScalar(0);
@@ -494,6 +692,7 @@ export class Characters extends CharacterSkinnedMesh {
 
   dispose() {
     (this.skeleton as any).dispose?.();
+    events.off('webgl_character_emote', this._toggleEmote);
     this._controls.disable();
     this._connection?._dispose();
     this._collisionPhysics.geometry?.dispose();

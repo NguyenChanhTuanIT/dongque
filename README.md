@@ -5,113 +5,219 @@
 
 </p>
 
+An interactive WebGL summer scene: walk a kid around a seaside village with
+sea, sky, birds, trees, grass, houses and **5 hidden secrets** (the `0/5`
+counter in the corner). Based on **Summer Afternoon**, the WebGL experiment by
+[Vicente Lucendo](https://summer-afternoon.vlucendo.com).
 
+This version adds an admin panel with live remote config (Firebase) and its own
+WebSocket multiplayer server.
 
-A rewritten vanilla TypeScript port of **Summer Afternoon**, the
-WebGL art experiment by [Vicente Lucendo](https://summer-afternoon.vlucendo.com),
-rebuilt from a fully decompiled copy of the original deployed site.
-
-> **Summer Afternoon** · A WebGL experiment by Vicente Lucendo
-> https://summer-afternoon.vlucendo.com
+Stack: TypeScript, Vite, three.js `0.148`, three-mesh-bvh, GSAP, Firebase
+(config only), Node.js + `ws` (multiplayer).
 
 ## Run it
 
-Requires [bun](https://bun.sh) (or npm, `package.json` scripts are compatible).
+Requires Node.js 18+.
 
 ```bash
-bun install
-bun run dev        # http://localhost:5173
-bun run build      # tsc -b && vite build → dist/
-bun run preview    # serve the production build
-bun run typecheck  # tsc -b --noEmit
+npm install
+npm run dev        # http://localhost:5173  (game + admin + multiplayer)
+npm run build      # tsc -b && vite build → dist/
+npm run server     # serve dist/ + multiplayer on http://localhost:8787
+npm run preview    # Vite preview of the production build
+npm run typecheck  # tsc -b --noEmit
 ```
 
+## Controls
 
-## From the original to this port
+| Action | Keyboard / mouse | Touch | Gamepad |
+|---|---|---|---|
+| Move | `WASD` / arrows, or hold left mouse toward the cursor | drag (virtual joystick) | left stick |
+| Sprint | hold `Shift` | push the joystick to the rim | RB / R1 or L3 |
+| Jump | `Space`, or quick right-click | tap | A / ✕ |
+| Chat (whole room) | `Enter` to open, `Enter` to send, `Esc` to close | chat button | — |
+| Emote | `E` wave · `1` wave · `2` clap · `3` dance · `4` bored · `5` sit cross-legged · `6` fishing · `7` lie on the belly · `8` sunbathe · `9` guitar · `0` kite · `Q` ice cream · `H` high five, or the smiley button menu | smiley button menu | Y / △ (wave) |
 
-The deployed site was a single page: one HTML file, two JavaScript chunks
-(`index.js` entry + `App3D.js`, a 1.5 MB bundle), and ~97
-static assets (geometries, textures, fonts, wasm transcoders, audio). No source
-maps were published. This repo reproduces the same experience as typed,
-modular code with no Svelte and no bundled vendors:
+Wave and clap stop after 3 s; the others last until you move (pressing the
+same emote again also stops it) — except guitar, kite and ice cream, which keep
+playing while you walk (upper body from the emote, legs from the run cycle).
+High five (`H`) turns you toward the nearest player and raises a hand; when two
+raised hands are close, both clients show a 👏 burst. Emotes and sprinting are visible to other
+players. Wave, clap, dance, sit, fishing, lying prone and sunbathing are generated in
+code from the idle pose (`src/scene/emotes.ts`), so no extra animation assets are needed; the
+fishing rod, line, bobber and fish are small instanced props that follow each
+character's right hand (`src/scene/fishing.ts`); the guitar sits in front of the
+belly with its neck in the left hand (`src/scene/guitar.ts`).
 
-| Piece | Original | This repo |
-|---|---|---|
-| UI | Svelte 3 compiled components (App3D, Loader, Modal, UI, Button, Interactive, GenericInfo, Unsupported) | Plain DOM + GSAP (`src/components/ui.ts`) |
-| Language | JavaScript (minified bundle) | **TypeScript**, typed, modular |
-| Rendering | three.js r148 + three-mesh-bvh | npm `three@0.148.0` |
-| Animation | GSAP 3.11.3 + CSSPlugin + CustomEase | npm `gsap@3.11.3` |
-| Shaders | Embedded template strings in the bundle | **Verbatim `.glsl` files** (`src/scene/glsl/`, imported with `?raw`) |
-| Formats | KTX2/Basis, Draco, custom `.bin` geometry (JSON header + interleaved binary) | Same, ported loaders |
-| Networking | WebSocket multiplayer ("microrealm", room prefix `summer`, private relay server) | **P2P multiplayer over iroh-gossip** compiled to WebAssembly (`src/engine/multiplayer/iroh.ts` + Rust workspace in `multiplayer/`) |
-| Audio | WebAudio, 5 looping tracks (forest / beach / footsteps / song / click1) | Same |
-| Build | One Svelte chunk | Vite + bun, code-split worker chunk |
+## NPCs
 
-The experience: a loader → LUT-graded intro transition → an interactive summer
-scene (walkable kid, sea, sky, birds, trees, grass, houses, UFO, alien, cats,
-sloth…) with **5 hidden easter eggs** (the `0/5` counter in the corner).
+Client-side characters (`src/scene/npcs.ts`): every client runs the same small
+scenes, so all players see them alike without network traffic. Each group is
+toggled live in the admin panel (section **NPC**, `config.features.npcs`):
 
-## How this repo came to be
+- **seaCouple** — two kids sitting on the beach watching the sea, the boy holding the girl by the waist.
+- **kiteFlyers** — two kids strolling on the beach with kites (walk 7 s, stop
+  5 s), laughing now and then ("ha ha!").
+- **guitarist** — a kid playing guitar and singing (♪ notes) at the far end of
+  the road below the spawn.
 
-Everything here was recovered directly from the shipped artifact, no source
-maps, no original sources, only minified code and binary assets:
+Optional sounds, picked up automatically when present (louder when close):
+`public/assets/audio/npc-laugh.mp3` (laughter, one-shot) and
+`public/assets/audio/npc-guitar.mp3` (guitar / song, looped).
 
-1. **Recovery**, every file the site fetches was downloaded: both JS chunks,
-   all `.bin` geometries, KTX2/PNG textures, fonts, transcoders and audio.
-2. **Decompilation**, the 1.5 MB app bundle was de-minified, indexed at the
-   statement level, and split into logical modules; the split was verified to
-   reassemble **losslessly** back into the exact shipped module (byte-compared
-   after re-minification, identical semantics, ~0.5 % delta from the original
-   build's unrecoverable minifier settings). All 165 GLSL chunks embedded in the
-   bundle were extracted as standalone shader files.
-3. **Port**, the recovered modules were then read, understood, and re-written as typed, modular TypeScript: no Svelte (plain DOM + GSAP), no
-   bundled vendors (npm packages), shaders as verbatim `.glsl` files.
+NPCs are drawn by the same instanced mesh as players (outfits, emotes, props)
+but use ids prefixed `npc:`; they are excluded from `forEachCharacter`
+(name tags, high five) and survive network reconnects.
 
-What cannot be recovered from a compiled artifact: pre-minification variable
-names, the original `.svelte` template sources (only compiled Svelte 3 output
-exists), and the private multiplayer server implementation (the client protocol
-was fully decoded instead). Everything else, scene, shaders, physics, audio,
-UI, flow, is reproduced here.
+## Outfits (character picker)
 
-## Multiplayer: pure P2P, one hardcoded room
+The person button opens the picker: **Nam / Nữ** presets plus one row per
+equipment slot — Mũ (hat), Kiểu tóc (hair), Áo (top), Quần / váy (bottom),
+Dép (shoes), Kính (glasses). Choices apply live, are remembered per device
+(`localStorage`) and are visible to other players.
 
-Remote characters are now served by **iroh** (https://iroh.computer), a P2P
-networking library compiled to WebAssembly, instead of the original's private
-WebSocket relay (which is gone and rejects all clients). There is **no
-application server, no rooms, and no join codes**: every client joins the same
-hardcoded room.
+How it works (`src/scene/appearance.ts`):
 
-How it works:
+- Every vertex of the kid mesh belongs to a **part** (hat, t-shirt, shorts,
+  sandals… split from the original mesh by color; skirt, hairstyles, hair cap,
+  bare feet, sunglasses generated in code and skinned to the same bones).
+- An **item** is a list of parts; `SLOTS` is the catalog. Each character gets a
+  visibility bitmask (`instanceParts`) and the shader hides everything else
+  (up to 24 parts), so all animations and emotes work with every outfit.
+- The outfit (one item index per slot) is sent as its own message when joining
+  and when it changes (`[2][n][items]` → server stores it and relays
+  `[4][id][n][items]`, also to players who join later).
 
-1. **The room** is a fixed 32-byte seed (`multiplayer/shared/src/lib.rs`,
-   `ROOM_SEED`). It doubles as the gossip `TopicId` (the broadcast scope) and
-   as the secret key of the room's rendezvous address on the public pkarr
-   relay (`dns.iroh.link`).
-2. **Rendezvous (zero signaling):** every client publishes its endpoint
-   address (id + home relay) signed with the room key, and resolves the room
-   key every 3 s. Whoever is in the room is found this way, no server needed
-   to exchange "join codes".
-3. **Gossip:** discovered peers are fed to the iroh-gossip swarm, which then
-   maintains membership and broadcast trees on its own (HyParView/PlumTree).
-   Every frame the local character publishes its `{p, r, a, seed}` state (26
-   bytes), signed (ed25519) and sequenced, so only authenticated, fresh state
-   is applied to remote characters.
-4. **Transport:** browsers can't hole-punch (no UDP), so packets flow through
-   n0's free public relays over WebSocket, end-to-end encrypted, and purely
-   peer-to-peer in every other sense. If the page goes idle/hidden the client
-   slows to a 1 Hz presence beacon instead of dropping out.
+To add a shop item: add its geometry as a new part (a `.glb` skinned to the
+same skeleton, or code), give it a `PART` id and list it in `SLOTS`.
 
-The Rust workspace lives in `multiplayer/` (`shared` = room logic,
-`browser-wasm` = wasm-bindgen wrapper, `cli` = native tester). The compiled
-wasm package is committed at `multiplayer/browser-wasm/pkg/` so site builds
-never need a Rust toolchain. **Rebuilding is handled by CI** (`.github/workflows/build-wasm.yml`): it runs on every push that touches `multiplayer/**`
-(or the build pipeline) with full caching, and commits the refreshed pkg back
-to `main` — no releases or tags involved. Locally, `bun run build:wasm`
-(requires [Rust](https://rustup.rs), [wasm-pack](https://rustwasm.github.io/wasm-pack/)
-and clang/LLVM for the wasm target; both the script and the workflow share
-`scripts/build-wasm.sh`). You can test the room from a terminal with
-`cargo run -p summer-cli --release` inside `multiplayer/` — two instances
-will discover each other exactly like two browser tabs.
+## Chat & display names
+
+- **Chat:** every line goes to the whole room (the log at the bottom left) and
+  pops up as a speech bubble over the speaker. The relay cleans each line
+  (invalid UTF-8, control/bidi characters, max 160 characters) and allows a
+  burst of 5 lines, then one every 2 s.
+- **Names:** players start as `Khách <id>`. Choosing a name (character panel →
+  *Tên hiển thị* → **Đăng nhập**) requires an account: the button opens a
+  sign-in modal (email + password), and new players switch to *Đăng ký* to
+  create one and pick their name at the same time. The relay verifies the
+  Firebase ID token (`server/firebase-auth.mjs`, no extra dependency) before
+  showing the name to anyone. The name is remembered per account on that
+  device and re-claimed on every reconnect. The email is never shown.
+- **Setup:** Firebase Console → Authentication → Sign-in method → enable
+  **Email/Password**, and add your site's domain under *Authorized domains*. The relay
+  reads the project id from `FIREBASE_PROJECT_ID` (or `VITE_FIREBASE_PROJECT_ID`;
+  `npm run dev` takes it from `.env`). Without it, name changes are refused and
+  everyone stays a guest; chat still works.
+- Code: `src/components/chat.ts`, `src/components/nametags.ts`,
+  `src/components/authModal.ts` (sign-in / sign-up modal),
+  `src/social/` (email/password accounts, names), `server/realm.mjs` (messages 5–7).
+
+## Daily rewards (flowers)
+
+The flower button in the corner menu opens *Quà mỗi ngày*. Flowers (🌸) are the
+currency for the future accessory shop (clothes, glasses, shoes, fishing rod,
+kite, ice cream…). A signed-in account gets, per calendar day in Vietnam time:
+
+- **Check-in** once a day: 5 flowers, Saturday and Sunday 10.
+- **Online milestones**, one after the other: 10 min → 5, then 30 more min
+  → 10, then 1 more hour → 15. A milestone's clock starts when the previous
+  one is claimed and stops once reached, until claimed. Time only counts
+  while a game tab of the account is visible (the client reports
+  `visibilitychange`); several tabs count once.
+
+The relay decides and stores everything (`server/wallets.mjs`), so players
+cannot edit their balance: `wallets.json` in `DATA_DIR` (default
+`server/data/`, git-ignored; with Docker mount a volume on `/app/data`).
+`REWARDS_TZ` changes the calendar time zone. Guests see a sign-in button.
+
+## Admin panel & remote config (Firebase)
+
+Scene parameters (UI texts, secrets' text/position/rotation/scale/trigger
+distance, scene tint/brightness/color grading, grass colors, volume, player
+spawn and forces, module and multiplayer toggles, multiplayer server URL) live in one Firestore document, `config/scene`, edited
+from `/admin.html`. The game reads it at boot (4 s timeout, then built-in
+defaults) and keeps listening, so most edits apply live to open sessions;
+fields marked *tải lại* in the panel only apply after a page reload.
+
+Without a `.env`, Firebase is never loaded and the game runs on the defaults
+in `src/config/schema.ts`.
+
+Setup:
+
+1. Create a Firebase project, enable **Firestore** and **Authentication →
+   Email/Password**, and register a **Web app**.
+2. `cp .env.example .env` and fill in the `VITE_FIREBASE_*` values, then
+   restart `npm run dev`.
+3. Authentication → Users → add the admin account (email + password).
+4. Firestore → create collection `admins` with a document whose id is that
+   user's **UID** (any content). The admin page also shows the UID after
+   signing in.
+5. Publish the rules in `firestore.rules` (Firestore → Rules, or
+   `firebase deploy --only firestore:rules`): anyone can read the config,
+   only uids in `admins` can write it.
+6. Open `http://localhost:5173/admin.html`, sign in, edit, **Lưu**.
+
+Code: `src/config/` (schema + defaults, Firebase bootstrap, live store),
+`src/admin/` (panel), `admin.html`.
+
+### User management
+
+The panel's **Người dùng** menu has two pages:
+
+- **Tài khoản** – player profiles from Firestore `users/{uid}`. The game
+  creates the profile on a player's first sign-in and updates the email, name
+  and last sign-in time after that (`src/social/auth.ts`), so accounts that
+  existed before this feature appear after their next sign-in. Admins can
+  search and filter (online / banned / admin), **ban / unban** an account
+  (with an optional private reason), and **grant / revoke admin** (`admins/{uid}`;
+  nobody can revoke their own rights).
+- **Đang online** – live connections from the relay, by room (name, account,
+  time online, position), with **Kick** and **Khoá**. It refreshes every 5 s.
+
+A ban is enforced in three places: the game signs a banned account out and
+refuses to sign it in, the relay refuses its display name (it reads
+`users/{uid}.banned` through the Firestore REST API with the player's own
+ID token), and the admin page tells the relay to disconnect it at once.
+Kicked or banned clients get WebSocket close code 4001 / 4003 and do not
+reconnect automatically.
+
+The online page talks to the relay's admin API (`server/admin-api.mjs`,
+`/admin/api/players|kick|ban`). Requests carry the admin's Firebase ID token;
+the relay verifies it and checks `admins/{uid}` with that same token, so no
+service account is needed, but `FIREBASE_PROJECT_ID` (or
+`VITE_FIREBASE_PROJECT_ID`) must be set on the relay. Deleting or disabling
+Firebase Auth accounts themselves still happens in the Firebase Console.
+
+After updating, publish the new `firestore.rules` (they add the `users`
+collection and let admins manage `admins`).
+
+## Multiplayer server (WebSocket)
+
+Remote players go through our own relay, `server/realm.mjs` (Node.js + `ws`),
+not a third-party network. Clients send a 26-byte binary state frame when they
+move (plus a 2 s heartbeat); the server keeps the latest frame per player and
+broadcasts the changed ones 20×/s to everyone in the same room.
+
+- **Development:** `npm run dev` already runs the relay on the same port
+  (`ws://localhost:5173/mp`, counts at `/health`). Nothing else to start.
+- **Production:** `npm run build && npm run server` serves the site, the admin
+  page, `/mp` and `/health` from one process on port 8787. Or with Docker:
+  `docker build -t summertime . && docker run -p 8787:8787 summertime`.
+  Behind HTTPS, proxy WebSocket upgrades on `/mp` (the client then uses
+  `wss://`).
+- **Server URL:** by default the game connects to `/mp` on the page's own
+  host. Override with `VITE_MULTIPLAYER_URL` at build time or the
+  *Địa chỉ server multiplayer* field in the admin panel.
+- **Server settings (env):** `PORT`, `HOST`, `STATIC_DIR`,
+  `MAX_PLAYERS_PER_ROOM` (127), `TICK_MS` (50), `VIEW_DISTANCE` (0 = relay
+  everyone; otherwise only nearby players), `ALLOWED_ORIGINS`,
+  `FIREBASE_PROJECT_ID` (account-verified names, see above; with Docker pass
+  `-e FIREBASE_PROJECT_ID=...`).
+- **Protections:** frame validation (size, version, finite coordinates),
+  40 frames/s per client (extra dropped, flooding disconnects), 4 KB max
+  message, chat rate limit, ping every 15 s to drop dead connections.
 
 ## Architecture
 
@@ -139,9 +245,12 @@ loads its 24 subsystems in parallel, then the loader hides and the intro plays.
 - `physics.ts`, three-mesh-bvh accelerated sphere-vs-triangle collision with
   floor detection, position forces and damping (the kid walks the terrain).
 - `sunlight.ts`, `FollowSunLight`: a directional sun that follows the camera
-  and bakes a **cascaded shadow map** per LOD level (see fidelity notes).
+  and bakes a **cascaded shadow map** per LOD level.
 - `audio.ts`, `AudioController`: 5 preloaded loops, positional listener,
   per-frame player-position updates, forest↔beach crossfade by world X.
+- `multiplayer/`, `SocketConnection` (WebSocket client for `server/realm.mjs`)
+  and the 26-byte character state codec; remote players are interpolated in
+  `characters.ts`.
 
 **Scene modules** (`src/scene/`), `environmentScene.ts` composes 24 subsystems
 (characters, sky, terrain, sea, birds, trees, bushes, lightposts, palmtrees,
@@ -152,7 +261,6 @@ following baked curve paths with vertex-texture-animated flapping; grass bends
 away from the character via shared `charPos`/`charSpeed` uniforms; the
 ufo/alien/cats/sloth/gossip each hide one of the 5 secrets.
 
- 
 
 ## Layout
 
@@ -161,16 +269,18 @@ src/
 ├── core/            # client (UA), events, deferred, math, ticker/clock
 ├── engine/          # renderer/composer/adaptive-DPR, scene, cameras, input,
 │                    # physics (BVH), characters, particles (GPU), sunlight (CSM),
-│                    # audio, loaders (bin/geometries/instancing/textures), multiplayer
+│                    # audio, loaders (bin/geometries/instancing/textures),
+│                    # multiplayer (WebSocket client + state codec)
 ├── scene/           # mainController, environmentScene, materials, shaders-post,
 │                    # sky, sea, terrain, birds, vegetation, structures, setpieces,
 │                    # characters + glsl/ (verbatim shader files)
-└── components/      # ui.ts, plain-DOM UI (loader, nav, easter counter, modals)
+├── components/      # ui.ts, plain-DOM UI (loader, nav, easter counter, modals)
+├── config/          # remote config: schema + defaults, Firebase bootstrap, live store
+└── admin/           # admin panel (admin.html)
 
-multiplayer/         # Rust workspace: iroh P2P room (see section above)
-├── shared/          # SummerNode: endpoint + gossip + pkarr room beacon
-├── browser-wasm/    # wasm-bindgen wrapper → pkg/ (committed, consumed as `summer-iroh`)
-└── cli/             # native tester that joins the same room from a terminal
+server/              # multiplayer relay (realm.mjs) + standalone static server (index.mjs)
+public/assets/       # geometries (.bin), textures, audio, fonts, Draco/Basis decoders
+firestore.rules      # Firestore security rules (config read-only for players)
 ```
 
 ## Credits & disclaimer
@@ -178,6 +288,5 @@ multiplayer/         # Rust workspace: iroh P2P room (see section above)
 - Original experience: **Summer Afternoon** by **Vicente Lucendo**,
   https://summer-afternoon.vlucendo.com
 - All 3D assets, textures, audio, fonts and the original code belong to their
-  respective authors; this is a reverse-engineering and learning project,
-  not affiliated with or endorsed by the original author.
-- The original was decompiled for study; the code here was re-written from that study. If you are the original author and would like this removed, please open an issue.
+  respective authors; this project is not affiliated with or endorsed by the
+  original author.

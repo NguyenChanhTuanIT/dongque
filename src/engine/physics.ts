@@ -152,6 +152,12 @@ export class CollisionPhysics {
     },
   };
 
+  /** Live-tune movement (run acceleration and jump impulse). */
+  setForces(positionForce: number, jumpForce: number): void {
+    this._positionForce = positionForce;
+    this._jumpForce = jumpForce;
+  }
+
   private _initializeGeometry(options: CollisionOptions) {
     const mesh = this._colliderMesh;
     mesh.updateMatrixWorld(true);

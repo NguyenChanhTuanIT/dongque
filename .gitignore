@@ -91,13 +91,8 @@ out
 .nuxt
 dist
 
-# Rust P2P workspace build output (the wasm pkg is committed)
-multiplayer/target/
-multiplayer/**/target/
 
 
-# OpenChamber tooling artifacts (screenshots, etc.)
-.openchamber/
 
 # Gatsby files
 .cache/
@@ -142,3 +137,5 @@ multiplayer/**/target/
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+# Relay data (flower wallets)
+server/data/
