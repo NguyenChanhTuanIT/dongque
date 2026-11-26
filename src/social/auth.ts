@@ -1,6 +1,7 @@
 // Email/password accounts (Firebase Auth), required to pick a display name.
 // The name itself is claimed on the relay, which verifies the ID token
-// (server/firebase-auth.mjs); it is remembered per account on this device.
+// (server/firebase-auth.mjs); it is remembered per account on this device and
+// in the Firestore profile, which a new device reads it back from.
 // Each sign-in also records a profile in Firestore `users/{uid}` (email, name,
 // sign-in times) for the admin panel, which can ban the account from there.
 
@@ -19,7 +20,7 @@ const firebaseAuth = () => Promise.all([getFirebaseApp(), import('firebase/auth'
 const firestore = () => Promise.all([getFirebaseApp(), import('firebase/firestore')]);
 /** Error code thrown by signInWithEmail for an account banned in the admin panel. */
 export const BANNED_ERROR = 'app/account-banned';
-const nameKey = (uid: string) => `summertime.name.${uid}`;
+const nameKey = (uid: string) => `dongque.name.${uid}`;
 
 export const isLoginAvailable = isFirebaseConfigured;
 
@@ -53,10 +54,20 @@ function start() {
         events.emit('mp_profile', signedIn ? profileFor(signedIn, savedName(signedIn.uid)) : null);
         for (const l of listeners) l(signedIn);
         if (signedIn) {
-          void recordLogin(signedIn).then((banned) => {
-            if (!banned || current?.uid !== signedIn.uid) return;
-            events.emit('auth_banned');
-            void signOut();
+          void recordLogin(signedIn).then(({ banned, name }) => {
+            if (current?.uid !== signedIn.uid) return;
+            if (banned) {
+              events.emit('auth_banned');
+              void signOut();
+              return;
+            }
+            // First sign-in on this device: take the account's name from its
+            // profile (users/{uid}.name) and claim it on the relay.
+            if (name && !savedName(signedIn.uid)) {
+              storeName(signedIn.uid, name);
+              events.emit('mp_profile', profileFor(signedIn, name));
+              for (const l of listeners) l(signedIn);
+            }
           });
         }
       });
@@ -68,7 +79,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
   const [app, fa] = await firebaseAuth();
   const { user } = await fa.signInWithEmailAndPassword(fa.getAuth(app), email, password);
   current = user;
-  if (await recordLogin(user)) {
+  if ((await recordLogin(user)).banned) {
     await signOut();
     throw Object.assign(new Error('account banned'), { code: BANNED_ERROR });
   }
@@ -81,6 +92,23 @@ export async function registerWithEmail(email: string, password: string): Promis
   current = user;
   void recordLogin(user); // queued before the name write that usually follows
   return user;
+}
+
+/**
+ * Send a password reset email (Firebase Auth, Vietnamese template). Resolves
+ * for unknown emails too (and Firebase may not tell them apart), so the caller
+ * should not reveal whether the email has an account.
+ */
+export async function resetPassword(email: string): Promise<void> {
+  const [app, fa] = await firebaseAuth();
+  const auth = fa.getAuth(app);
+  auth.languageCode = 'vi';
+  try {
+    await fa.sendPasswordResetEmail(auth, email);
+  } catch (err) {
+    if ((err as { code?: string })?.code === 'auth/user-not-found') return; // same answer as for a known email
+    throw err;
+  }
 }
 
 export async function signOut() {
@@ -99,15 +127,15 @@ function queueProfile<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
-/** One profile sync per account and page load; resolves to "is banned". */
-const logins = new Map<string, Promise<boolean>>();
+/** One profile sync per account and page load; resolves to its ban flag and saved name. */
+const logins = new Map<string, Promise<{ banned: boolean; name: string }>>();
 
 /**
  * Create `users/{uid}` on first sign-in, refresh email and last sign-in time
  * after that. Never rejects: without Firestore (or before the rules are
  * deployed) the game simply keeps working and the account counts as not banned.
  */
-function recordLogin(user: User): Promise<boolean> {
+function recordLogin(user: User): Promise<{ banned: boolean; name: string }> {
   let pending = logins.get(user.uid);
   if (!pending) {
     pending = queueProfile(async () => {
@@ -115,16 +143,18 @@ function recordLogin(user: User): Promise<boolean> {
       const ref = fs.doc(fs.getFirestore(app), USERS_COLLECTION, user.uid);
       const snap = await fs.getDoc(ref);
       if (snap.exists()) {
-        if (snap.data().banned === true) return true;
+        const data = snap.data();
+        const name = typeof data.name === 'string' ? data.name : '';
+        if (data.banned === true) return { banned: true, name };
         await fs.updateDoc(ref, { email: user.email ?? '', lastLoginAt: fs.serverTimestamp() });
-      } else {
-        const now = fs.serverTimestamp();
-        await fs.setDoc(ref, { email: user.email ?? '', name: savedName(user.uid), createdAt: now, lastLoginAt: now });
+        return { banned: false, name };
       }
-      return false;
+      const now = fs.serverTimestamp();
+      await fs.setDoc(ref, { email: user.email ?? '', name: savedName(user.uid), createdAt: now, lastLoginAt: now });
+      return { banned: false, name: savedName(user.uid) };
     }).catch((err) => {
       console.warn('[auth] could not record the profile', err);
-      return false;
+      return { banned: false, name: '' };
     });
     logins.set(user.uid, pending);
   }
@@ -146,6 +176,8 @@ export function authErrorMessage(err: unknown): string {
       return 'Email không hợp lệ.';
     case 'auth/missing-password':
       return 'Vui lòng nhập mật khẩu.';
+    case 'auth/missing-email':
+      return 'Vui lòng nhập email.';
     case 'auth/invalid-credential':
     case 'auth/invalid-login-credentials':
     case 'auth/wrong-password':
@@ -177,13 +209,17 @@ export function savedName(uid: string): string {
   }
 }
 
-/** Remember the name and claim it on the relay (the echo confirms it). */
-export function setName(user: User, name: string) {
+function storeName(uid: string, name: string) {
   try {
-    localStorage.setItem(nameKey(user.uid), name);
+    localStorage.setItem(nameKey(uid), name);
   } catch {
     /* storage unavailable: the name lasts for this session */
   }
+}
+
+/** Remember the name and claim it on the relay (the echo confirms it). */
+export function setName(user: User, name: string) {
+  storeName(user.uid, name);
   recordName(user, name);
   events.emit('mp_profile', profileFor(user, name));
 }

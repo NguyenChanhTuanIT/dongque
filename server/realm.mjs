@@ -1,4 +1,4 @@
-// SummerTime multiplayer relay: WebSocket rooms that fan out character state.
+// RelaxTime multiplayer relay: WebSocket rooms that fan out character state.
 //
 // Wire protocol (binary, little-endian):
 //   client → server   26-byte state frame (see src/engine/multiplayer/codec.ts)
@@ -11,11 +11,26 @@
 //     6 CHAT     [u32 id][UTF-8 text]            room-wide chat, echoed to the sender
 //     7 NOTICE   [u8 code]                       see NOTICE_* below
 //     8 WALLET   [UTF-8 JSON]                    flowers + daily rewards (null = signed out), see wallets.mjs
+//     9 SOCIAL   [u8 kind][u32 fromId][u8 activity]   play-together invitations, see "Together" below
+//    10 TIME     [f64 clientMs][f64 serverMs]    answer to a TIME ping (shared clock)
 //   close codes: 4001 kicked by an admin · 4003 account banned (clients do not reconnect)
 //   client → server   [2] OUTFIT · [3] PROFILE [u16 n][Firebase ID token][u8 m][name] (n = m = 0: sign out)
 //                     · [4] CHAT [UTF-8 text] · [5] REWARD [u8 action] (0 status, 1 check-in, 2-4 online tier 0-2)
 //                     · [6] VISIBLE [u8 0|1] (game tab shown / hidden: online rewards only count while shown)
 //                     · [7] SHOP [UTF-8 JSON {"buy": itemId, "price": n}] (price = what the buyer saw)
+//                     · [8] GUEST [ASCII key, 16-64 chars of A-Z a-z 0-9 _ -] (the tab's guest wallet,
+//                       sent right after WELCOME; see "Guests" in server/wallets.mjs)
+//                     · [9] SOCIAL [u8 kind][u32 targetId][u8 activity] · [10] TIME [f64 clientMs]
+//   Together: INVITE (1) goes to a player of the room within SOCIAL_RANGE, at
+//   most SOCIAL_BURST in a row (refilled one per SOCIAL_REFILL_MS). ACCEPT (2)
+//   only counts for a pending invitation (SOCIAL_INVITE_MS) of that player
+//   with that activity; the relay then confirms it to both. DECLINE (3) /
+//   END (4) / CANCEL (5) are passed on. Treating someone to an ice cream
+//   (activity 2) needs the ice cream item; the treated player may then show
+//   the treat pose (TREAT_STATE) for TREAT_MS.
+//   Guests play like accounts (check-in, online rewards, shop) with a wallet
+//   that lives as long as their tab; signing up moves it into the new account
+//   (the WALLET then carries result {"sync": "adopted" | "skipped"}).
 //   OUTFIT is checked against the shop (server/shop.mjs): items the account does
 //   not own are shown as the slot default, and the sender gets the corrected
 //   outfit back ([4] with its own id). Signed-in accounts keep their outfit in
@@ -31,7 +46,7 @@ import { WebSocketServer } from 'ws';
 import nodePath from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTokenVerifier } from './firebase-auth.mjs';
-import { createWallets } from './wallets.mjs';
+import { createWallets, GUEST_PREFIX } from './wallets.mjs';
 import { createPriceBook, loadCatalog } from './shop.mjs';
 
 export const STATE_BYTES = 26;
@@ -44,12 +59,35 @@ const MSG_NAME = 5;
 const MSG_CHAT = 6;
 const MSG_NOTICE = 7;
 const MSG_WALLET = 8;
+const MSG_SOCIAL = 9;
+const MSG_TIME = 10;
 const CLIENT_OUTFIT = 2; // client → server: [2][u8 n][n bytes], item index per slot
 const CLIENT_PROFILE = 3;
 const CLIENT_CHAT = 4;
 const CLIENT_REWARD = 5;
 const CLIENT_VISIBLE = 6;
 const CLIENT_SHOP = 7;
+const CLIENT_GUEST = 8;
+const CLIENT_SOCIAL = 9;
+const CLIENT_TIME = 10;
+const SOCIAL_INVITE = 1;
+const SOCIAL_ACCEPT = 2;
+const SOCIAL_DECLINE = 3;
+const SOCIAL_END = 4;
+const SOCIAL_CANCEL = 5;
+/** Activities (src/scene/together.ts): 1 flower, 2 ice cream, 3 hand in hand, 4 dance. */
+const ACTIVITY_ICECREAM = 2;
+const MAX_ACTIVITY = 4;
+const SOCIAL_RANGE = 8;
+const SOCIAL_INVITE_MS = 30_000;
+const SOCIAL_BURST = 4;
+const SOCIAL_REFILL_MS = 3_000;
+/** Animation states tied to the ice cream item (src/scene/emotes.ts). */
+const OFFER_ICECREAM_STATE = 33;
+const TREAT_STATE = 35;
+const TREAT_MS = 120_000;
+const ICECREAM_ITEM = 'picnic.icecream';
+const GUEST_KEY = /^[A-Za-z0-9_-]{16,64}$/;
 const REWARD_STATUS = 0;
 const REWARD_CHECKIN = 1;
 const REWARD_ONLINE = 2; // 2, 3, 4 = online tier 0, 1, 2
@@ -60,6 +98,15 @@ export const NOTICE_BAD_NAME = 2;
 export const NOTICE_LOGIN_UNAVAILABLE = 3;
 export const NOTICE_CHAT_TOO_FAST = 4;
 export const NOTICE_BANNED = 5;
+/** The display name is taken by another player online, or reserved (admin, system…). */
+export const NOTICE_NAME_TAKEN = 6;
+/** Kicked / banned players' IPs are refused for a while (they would come back as guests). */
+const KICK_BLOCK_MS = 10 * 60_000;
+const BAN_BLOCK_MS = 6 * 60 * 60_000;
+/** Online rewards only count while the player did something in this window (anti idle bots). */
+const DEFAULT_ACTIVE_MS = 10 * 60_000;
+/** Names nobody may take (impersonating staff / the game), compared without accents. */
+const RESERVED_NAMES = /admin|quan ?tri|moderator|\bmod\b|he ?thong|system|game ?master|\bgm\b|ban quan ly|support|ho ?tro/;
 export const CLOSE_KICKED = 4001;
 export const CLOSE_BANNED = 4003;
 /** How long a Firestore ban lookup is trusted before asking again. */
@@ -83,9 +130,18 @@ const ROOM_NAME = /^[a-z0-9_-]{1,32}$/i;
 const MAX_ABS_COORD = 10_000;
 /** Highest animation state: 0 ground, 1 airborne, 2 bored, 3 wave, 4 clap, 5 dance,
  *  6 sit cross-legged, 7 fishing, 8 lying prone, 9 sunbathing, 10 guitar,
- *  11 kite, 12 ice cream, 13 high five, 14 walking a dog, 15 walking a cat
- *  (see src/scene/emotes.ts; 15 fills the 4-bit field). */
-const MAX_ANIM_STATE = 15;
+ *  11 kite, 12 ice cream, 13 high five, 14 walking a dog, 15 walking a cat,
+ *  16 … 38 countryside emotes, stone benches, play together, 39 … 42 fishing
+ *  mini-game stages, 43 catching butterflies, 44 … 64 holding up a caught fish
+ *  (one per species) (src/scene/emotes.ts
+ *  MAX_NET_STATE). The field has 7 bits (bit 7 = sprinting). */
+const MAX_ANIM_STATE = 64;
+/** Fishing mini-game stages (bite, fight, landed, snapped) and holding up a catch (44 … 64): they need the fishing rod like state 7. */
+const FISH_STATE = 7;
+/** Items that can break and be lost (then bought again): the fishing rod. */
+const BREAKABLE_ITEMS = new Set(['picnic.fishing']);
+const FISH_STAGE_STATES = new Set([39, 40, 41, 42, ...Array.from({ length: 21 }, (_, k) => 44 + k)]);
+const ANIM_MASK = 0x7f;
 
 /**
  * @typedef {object} RealmOptions
@@ -95,6 +151,9 @@ const MAX_ANIM_STATE = 15;
  * @property {number} [maxMsgsPerSec]     Per-client frame budget; extra frames are dropped.
  * @property {number} [viewDistance]      Only relay players closer than this (0 = everyone).
  * @property {string[]} [allowedOrigins]  Browser origins allowed to connect (empty = any).
+ * @property {number} [maxConnections]   All connections together (default 1000).
+ * @property {number} [maxPerIp]         Connections from one IP (default 12; behind a proxy, from X-Forwarded-For).
+ * @property {number} [maxRooms]         Rooms open at once (default 20; new room names past that are refused).
  * @property {string} [firebaseProjectId] Enables account names (email/password ID tokens of this project).
  * @property {string} [dataDir]           Where wallets.json lives (default server/data).
  * @property {string} [timeZone]          Calendar of the daily rewards (default Asia/Ho_Chi_Minh).
@@ -110,6 +169,10 @@ export function createRealm(options = {}) {
     maxMsgsPerSec = 40,
     viewDistance = 0,
     allowedOrigins = [],
+    maxConnections = 1000,
+    maxPerIp = 12,
+    maxRooms = 20,
+    activeMs = DEFAULT_ACTIVE_MS,
     firebaseProjectId = '',
     dataDir = nodePath.join(nodePath.dirname(fileURLToPath(import.meta.url)), 'data'),
     timeZone = 'Asia/Ho_Chi_Minh',
@@ -121,10 +184,16 @@ export function createRealm(options = {}) {
   prices.warm();
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD, perMessageDeflate: false });
-  const verifyToken = firebaseProjectId ? createTokenVerifier(firebaseProjectId) : null;
+  // options.verifyToken / options.isBanned: test doubles (production uses Firebase).
+  const verifyToken = options.verifyToken ?? (firebaseProjectId ? createTokenVerifier(firebaseProjectId) : null);
   /** @type {Map<string, { players: Set<Player>, dirty: Set<Player> }>} */
   const rooms = new Map();
   let nextId = 1;
+  /** Open connections per client IP (see clientIp). */
+  const perIp = new Map();
+  /** IP → { until, uid } refused after a kick / ban (uid: the banned account, for unbans). */
+  const blockedIps = new Map();
+  let connections = 0;
   /** Bans set from the admin API (authoritative until restart). */
   const forcedBans = new Map();
   /** uid → { banned, at } from Firestore `users/{uid}.banned`. */
@@ -199,7 +268,7 @@ export function createRealm(options = {}) {
       const v = view.getFloat32(offset, true);
       if (!Number.isFinite(v) || Math.abs(v) > MAX_ABS_COORD) return false;
     }
-    return (buf[21] & 0x0f) <= MAX_ANIM_STATE; // bits 0-3 a (0 ground, 1 air, 2 bored, 3+ emotes), 4-6 look, 7 sprint
+    return (buf[21] & ANIM_MASK) <= MAX_ANIM_STATE; // bits 0-6 a (0 ground, 1 air, 2 bored, 3+ emotes), 7 sprint
   }
 
   function entriesBuffer(players) {
@@ -238,31 +307,69 @@ export function createRealm(options = {}) {
     for (const p of room.players) send(p.ws, data);
   }
 
+  /** Wallet of the session: the account once signed in, else the tab's guest wallet ('' = none yet). */
+  function walletIdOf(player) {
+    return player.uid || (player.guest ? GUEST_PREFIX + player.guest : '');
+  }
+
   function sendWallet(player, result) {
-    const body = player.uid ? { ...wallets.status(player.uid), result } : null;
+    const id = walletIdOf(player);
+    const body = id ? { ...wallets.status(id), guest: !player.uid, result } : null;
     send(player.ws, Buffer.concat([Buffer.from([MSG_WALLET]), Buffer.from(JSON.stringify(body), 'utf8')]));
   }
 
-  function sessionsOf(uid) {
+  /** Sessions sharing wallet `id` (account uid or guest id). */
+  function sessionsOf(id) {
     const out = [];
-    for (const room of rooms.values()) for (const p of room.players) if (p.uid === uid) out.push(p);
+    for (const room of rooms.values()) for (const p of room.players) if (walletIdOf(p) === id) out.push(p);
     return out;
   }
 
-  /** Online time counts while an account has at least one visible game tab. */
+  /**
+   * Online time counts while a wallet has at least one visible game tab whose
+   * player did something (moved, changed pose, chatted) in the last activeMs,
+   * so an idle bot tab does not farm the online rewards.
+   */
   function refreshOnline(uid) {
     if (!uid) return;
-    if (sessionsOf(uid).some((p) => p.visible)) wallets.online(uid);
+    const now = Date.now();
+    if (sessionsOf(uid).some((p) => p.visible && now - p.activeAt < activeMs)) wallets.online(uid);
     else wallets.offline(uid);
   }
 
-  /** Sign a session in / out. */
+  /** Something happened on this session: resume its online time if it was paused. */
+  function markActive(player) {
+    const wasIdle = Date.now() - player.activeAt >= activeMs;
+    player.activeAt = Date.now();
+    if (wasIdle) refreshOnline(walletIdOf(player));
+  }
+
+  /** Accent-free lower case, to compare names ("Quản trị" ~ "quan tri"). */
+  const plainName = (name) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
+
+  /** Whether `name` is reserved or used by another account online. */
+  function nameUnavailable(name, uid) {
+    const plain = plainName(name);
+    if (RESERVED_NAMES.test(plain)) return true;
+    for (const room of rooms.values()) {
+      for (const p of room.players) if (p.uid !== uid && p.nameText && plainName(p.nameText) === plain) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Sign a session in / out. Returns the guest wallet sync result when signing
+   * in from a guest wallet with progress ('adopted' / 'skipped', else '').
+   */
   function setUid(player, uid) {
     const old = player.uid;
-    if (old === uid) return;
+    if (old === uid) return '';
+    const oldWallet = walletIdOf(player);
     player.uid = uid;
-    refreshOnline(old);
-    refreshOnline(uid);
+    refreshOnline(oldWallet);
+    // Signing up after playing as a guest: the new account takes the guest wallet.
+    const sync = uid && oldWallet.startsWith(GUEST_PREFIX) ? wallets.adopt(uid, oldWallet) : '';
+    refreshOnline(walletIdOf(player));
     // Outfit: signing in puts on the account's saved outfit (or saves the
     // current one the first time); signing out takes off bought items.
     const saved = uid ? wallets.getOutfit(uid) : null;
@@ -272,6 +379,7 @@ export function createRealm(options = {}) {
     } else {
       applyOutfit(player, { save: !!uid });
     }
+    return sync;
   }
 
   /**
@@ -283,7 +391,7 @@ export function createRealm(options = {}) {
     const room = rooms.get(player.room);
     if (!player.wanted || !room?.players.has(player)) return;
     const wanted = player.wanted;
-    const shown = catalog.filterOutfit(wanted, (id) => wallets.owns(player.uid, id));
+    const shown = catalog.filterOutfit(wanted, (id) => wallets.owns(walletIdOf(player), id));
     const msg = Buffer.alloc(6 + shown.length);
     msg.writeUInt8(MSG_OUTFIT, 0);
     msg.writeUInt32LE(player.id, 1);
@@ -304,9 +412,23 @@ export function createRealm(options = {}) {
     } catch {
       return;
     }
+    const uid = walletIdOf(player); // account or guest wallet
+    // {"broke": item}: the player's rod broke (src/scene/fishingGame.ts), it is
+    // gone until bought again. Only breakable items; nothing is refunded.
+    if (typeof request?.broke === 'string') {
+      const lost = request.broke.slice(0, 64);
+      if (!uid || !BREAKABLE_ITEMS.has(lost)) return;
+      const result = wallets.lose(uid, lost);
+      if (!result.ok) return;
+      log(`${uid} broke ${lost}`);
+      for (const p of sessionsOf(uid)) {
+        // Not a shop result (the shop panel would say "bought"): its own key.
+        sendWallet(p, p === player ? { broke: lost } : undefined);
+      }
+      return;
+    }
     const id = typeof request?.buy === 'string' ? request.buy.slice(0, 64) : '';
     const seen = Number.isInteger(request?.price) ? request.price : -1;
-    const uid = player.uid;
     const reply = (result) => {
       for (const p of uid ? sessionsOf(uid) : [player]) sendWallet(p, p === player ? { shop: true, item: id, ...result } : undefined);
     };
@@ -324,7 +446,7 @@ export function createRealm(options = {}) {
     } finally {
       player.shopPending = false;
     }
-    if (player.uid !== uid) return; // signed out meanwhile
+    if (walletIdOf(player) !== uid) return; // signed in / out meanwhile
     if (!offer || !offer.enabled) return reply({ ok: false, error: 'disabled' });
     if (offer.price !== seen) return reply({ ok: false, error: 'price', price: offer.price });
     const result = wallets.buy(uid, id, offer.price);
@@ -335,14 +457,15 @@ export function createRealm(options = {}) {
   function onReward(player, buf) {
     if (buf.length !== 2) return;
     const action = buf[1];
-    if (!player.uid) return sendWallet(player, { action, ok: false, error: 'login' });
+    const id = walletIdOf(player); // account or guest wallet
+    if (!id) return sendWallet(player, { action, ok: false, error: 'login' });
     if (action === REWARD_STATUS) return sendWallet(player);
     let result;
-    if (action === REWARD_CHECKIN) result = wallets.checkIn(player.uid);
-    else if (action >= REWARD_ONLINE && action < REWARD_ONLINE + 3) result = wallets.claimOnline(player.uid, action - REWARD_ONLINE);
+    if (action === REWARD_CHECKIN) result = wallets.checkIn(id);
+    else if (action >= REWARD_ONLINE && action < REWARD_ONLINE + 3) result = wallets.claimOnline(id, action - REWARD_ONLINE);
     else return;
-    // Every session of the account sees the new balance; the result goes to the asker.
-    for (const p of sessionsOf(player.uid)) sendWallet(p, p === player ? { action, ...result } : undefined);
+    // Every session of the wallet sees the new balance; the result goes to the asker.
+    for (const p of sessionsOf(id)) sendWallet(p, p === player ? { action, ...result } : undefined);
   }
 
   async function onProfile(player, room, buf) {
@@ -368,11 +491,19 @@ export function createRealm(options = {}) {
     if (wantsName && !isValidName(name)) return notice(player, NOTICE_BAD_NAME);
     player.profilePending = true;
     let banned = false;
+    let sync = '';
     try {
       const { uid, provider } = await verifyToken(token);
       if (provider !== 'password') throw new Error(`provider ${provider}`);
-      banned = await isBanned(uid, token);
-      if (!banned && room.players.has(player)) setUid(player, uid);
+      banned = await (options.isBanned ?? isBanned)(uid, token);
+      if (!banned && wantsName && nameUnavailable(name, uid)) {
+        notice(player, NOTICE_NAME_TAKEN);
+        // Still sign in (rewards, wallet), just without that name.
+        if (room.players.has(player)) sync = setUid(player, uid);
+        if (room.players.has(player)) sendWallet(player, sync ? { sync } : undefined);
+        return;
+      }
+      if (!banned && room.players.has(player)) sync = setUid(player, uid);
     } catch (err) {
       log(`#${player.id} profile rejected: ${err instanceof Error ? err.message : err}`);
       notice(player, NOTICE_AUTH_FAILED);
@@ -380,9 +511,12 @@ export function createRealm(options = {}) {
     } finally {
       player.profilePending = false;
     }
-    if (banned) return notice(player, NOTICE_BANNED);
+    if (banned) {
+      notice(player, NOTICE_BANNED);
+      return;
+    }
     if (!room.players.has(player)) return; // left while we were verifying
-    sendWallet(player);
+    sendWallet(player, sync ? { sync } : undefined);
     if (!wantsName) return;
     player.profileAt = Date.now();
     player.nameText = name;
@@ -398,10 +532,67 @@ export function createRealm(options = {}) {
       player.chatRefillAt += refills * CHAT_REFILL_MS;
     }
     if (player.chatTokens <= 0) return notice(player, NOTICE_CHAT_TOO_FAST);
+    markActive(player);
     const text = cleanText(buf.subarray(1), CHAT_MAX_CHARS);
     if (!text) return;
     player.chatTokens--;
     broadcast(room, idMessage(MSG_CHAT, player.id, text, false));
+  }
+
+  /** [9][kind][u32 id][activity] */
+  function socialMessage(kind, id, activity) {
+    const msg = Buffer.alloc(7);
+    msg.writeUInt8(MSG_SOCIAL, 0);
+    msg.writeUInt8(kind, 1);
+    msg.writeUInt32LE(id, 2);
+    msg.writeUInt8(activity, 6);
+    return msg;
+  }
+
+  /** Play-together messages: [9][kind][u32 target][activity]. */
+  function onSocial(player, room, buf) {
+    if (buf.length !== 7) return;
+    const kind = buf[1];
+    const targetId = buf.readUInt32LE(2);
+    const activity = buf[6];
+    if (activity < 1 || activity > MAX_ACTIVITY || targetId === player.id) return;
+    let target = null;
+    for (const p of room.players) if (p.id === targetId) target = p;
+    if (!target) return;
+    const now = Date.now();
+    if (kind === SOCIAL_INVITE) {
+      const refills = Math.floor((now - player.socialRefillAt) / SOCIAL_REFILL_MS);
+      if (refills > 0) {
+        player.socialTokens = Math.min(SOCIAL_BURST, player.socialTokens + refills);
+        player.socialRefillAt += refills * SOCIAL_REFILL_MS;
+      }
+      if (player.socialTokens <= 0) return notice(player, NOTICE_CHAT_TOO_FAST);
+      const dx = player.x - target.x;
+      const dz = player.z - target.z;
+      if (dx * dx + dz * dz > SOCIAL_RANGE * SOCIAL_RANGE) return;
+      if (activity === ACTIVITY_ICECREAM && !wallets.owns(walletIdOf(player), ICECREAM_ITEM)) return;
+      player.socialTokens--;
+      player.invites.set(target.id, { activity, at: now });
+      send(target.ws, socialMessage(SOCIAL_INVITE, player.id, activity));
+      return;
+    }
+    if (kind === SOCIAL_ACCEPT) {
+      // target = the inviter
+      const invite = target.invites.get(player.id);
+      if (!invite || invite.activity !== activity || now - invite.at > SOCIAL_INVITE_MS) return;
+      target.invites.delete(player.id);
+      if (activity === ACTIVITY_ICECREAM) {
+        if (!wallets.owns(walletIdOf(target), ICECREAM_ITEM)) return;
+        player.treatUntil = now + TREAT_MS;
+      }
+      send(target.ws, socialMessage(SOCIAL_ACCEPT, player.id, activity));
+      send(player.ws, socialMessage(SOCIAL_ACCEPT, target.id, activity));
+      return;
+    }
+    if (kind === SOCIAL_DECLINE) target.invites.delete(player.id);
+    else if (kind === SOCIAL_CANCEL) player.invites.delete(target.id);
+    else if (kind !== SOCIAL_END) return;
+    send(target.ws, socialMessage(kind, player.id, activity));
   }
 
   function near(a, b) {
@@ -434,12 +625,22 @@ export function createRealm(options = {}) {
     }
   }
 
-  function onConnection(ws, req, roomName) {
+  function onConnection(ws, req, roomName, ip) {
     const room = getRoom(roomName);
     if (room.players.size >= maxPlayersPerRoom) {
       ws.close(1013, 'room full');
       return;
     }
+    connections++;
+    perIp.set(ip, (perIp.get(ip) ?? 0) + 1);
+    // Remembered for kicks / bans (IP block) on this session.
+    ws.clientIp = ip;
+    ws.once('close', () => {
+      connections--;
+      const n = (perIp.get(ip) ?? 1) - 1;
+      if (n > 0) perIp.set(ip, n);
+      else perIp.delete(ip);
+    });
     /** @type {Player} */
     const player = {
       id: nextId++,
@@ -453,13 +654,25 @@ export function createRealm(options = {}) {
       name: null,
       nameText: '',
       uid: '',
+      /** Guest wallet key of the tab (CLIENT_GUEST), '' until sent. */
+      guest: '',
       /** Game tab shown (reported by the client; hidden tabs earn no online time). */
       visible: false,
+      /** When `visible` last changed (rate limit). */
+      visibleAt: 0,
+      /** Last activity (moved, changed pose, chatted): online rewards pause after activeMs without. */
+      activeAt: Date.now(),
       connectedAt: Date.now(),
       profilePending: false,
       profileAt: 0,
       chatTokens: CHAT_BURST,
       chatRefillAt: Date.now(),
+      socialTokens: SOCIAL_BURST,
+      socialRefillAt: Date.now(),
+      /** Pending invitations we sent: target id → { activity, at }. */
+      invites: new Map(),
+      /** Treated to an ice cream until (ms). */
+      treatUntil: 0,
       x: 0,
       z: 0,
       windowStart: Date.now(),
@@ -518,24 +731,58 @@ export function createRealm(options = {}) {
         onReward(player, buf);
         return;
       }
+      if (buf[0] === CLIENT_GUEST) {
+        // Once per connection, before signing in matters: the tab's guest wallet.
+        const key = buf.subarray(1).toString('latin1');
+        if (player.guest || !GUEST_KEY.test(key)) return;
+        player.guest = key;
+        if (!player.uid) {
+          refreshOnline(walletIdOf(player));
+          applyOutfit(player, { echo: true }); // items this guest wallet owns
+          sendWallet(player);
+        }
+        return;
+      }
       if (buf[0] === CLIENT_SHOP) {
         void onShop(player, buf).catch((err) => log(`#${player.id} shop failed: ${err instanceof Error ? err.message : err}`));
+        return;
+      }
+      if (buf[0] === CLIENT_SOCIAL) {
+        onSocial(player, room, buf);
+        return;
+      }
+      if (buf[0] === CLIENT_TIME) {
+        if (buf.length !== 9) return;
+        const msg = Buffer.alloc(17);
+        msg.writeUInt8(MSG_TIME, 0);
+        buf.copy(msg, 1, 1, 9);
+        msg.writeDoubleLE(Date.now(), 9);
+        send(ws, msg);
         return;
       }
       if (buf[0] === CLIENT_VISIBLE) {
         if (buf.length !== 2) return;
         const visible = buf[1] === 1;
         if (visible === player.visible) return;
+        // A real tab flips this a few times a minute at most; each flip scans
+        // the sessions of the wallet, so ignore anything faster than 2/s.
+        if (now - player.visibleAt < 500) return;
+        player.visibleAt = now;
         player.visible = visible;
-        refreshOnline(player.uid);
-        if (player.uid) sendWallet(player); // "counting" changed
+        refreshOnline(walletIdOf(player));
+        if (walletIdOf(player)) sendWallet(player); // "counting" changed
         return;
       }
       if (!isValidState(buf)) return;
+      // Activity (anti idle bots): position or pose changed since the last frame.
+      if (!player.state || Math.abs(buf.readFloatLE(1) - player.x) + Math.abs(buf.readFloatLE(9) - player.z) > 0.05 || (buf[21] & ANIM_MASK) !== (player.state[21] & ANIM_MASK)) markActive(player);
       player.state = Uint8Array.from(buf);
       // Picnic emotes need their item: relay a standing pose otherwise.
-      const needs = catalog.emoteItems.get(player.state[21] & 0x0f);
-      if (needs && !wallets.owns(player.uid, needs)) player.state[21] &= 0xf0;
+      const anim = player.state[21] & ANIM_MASK;
+      const needs = catalog.emoteItems.get(FISH_STAGE_STATES.has(anim) ? FISH_STATE : anim) ?? (anim === OFFER_ICECREAM_STATE ? ICECREAM_ITEM : undefined);
+      if (needs && !wallets.owns(walletIdOf(player), needs)) player.state[21] &= ~ANIM_MASK & 0xff;
+      // A treat pose only after someone with an ice cream treated us.
+      if (anim === TREAT_STATE && player.treatUntil < now) player.state[21] &= ~ANIM_MASK & 0xff;
       player.x = buf.readFloatLE(1);
       player.z = buf.readFloatLE(9);
       room.dirty.add(player);
@@ -545,6 +792,7 @@ export function createRealm(options = {}) {
       room.players.delete(player);
       room.dirty.delete(player);
       setUid(player, '');
+      refreshOnline(walletIdOf(player)); // a guest wallet stops counting too
       const leave = Buffer.alloc(5);
       leave.writeUInt8(MSG_LEAVE, 0);
       leave.writeUInt32LE(player.id, 1);
@@ -569,8 +817,31 @@ export function createRealm(options = {}) {
     }
     const requested = url.searchParams.get('room') ?? 'main';
     const roomName = ROOM_NAME.test(requested) ? requested : 'main';
-    wss.handleUpgrade(req, socket, head, (ws) => onConnection(ws, req, roomName));
+    // Limits: total connections, connections per IP, number of open rooms
+    // (any ?room= would otherwise open a new room and dodge the per-room cap).
+    const ip = clientIp(req);
+    const refuse = (status, reason) => {
+      socket.write(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\n\r\n`);
+      socket.destroy();
+      return true;
+    };
+    if (connections >= maxConnections) return refuse(503, 'Service Unavailable');
+    if ((perIp.get(ip) ?? 0) >= maxPerIp) return refuse(429, 'Too Many Requests');
+    const block = blockedIps.get(ip);
+    if (block && block.until > Date.now()) return refuse(403, 'Forbidden');
+    if (block) blockedIps.delete(ip);
+    if (!rooms.has(roomName) && rooms.size >= maxRooms) return refuse(503, 'Service Unavailable');
+    wss.handleUpgrade(req, socket, head, (ws) => onConnection(ws, req, roomName, ip));
     return true;
+  }
+
+  /**
+   * The client's IP: behind a proxy (Render) the first X-Forwarded-For entry,
+   * otherwise the socket address.
+   */
+  function clientIp(req) {
+    const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
+    return forwarded || req.socket.remoteAddress || 'unknown';
   }
 
   /** Online counts for /health and the admin panel. */
@@ -605,12 +876,19 @@ export function createRealm(options = {}) {
     return out;
   }
 
-  /** Disconnect players by relay id and/or account uid; returns how many. */
+  /**
+   * Disconnect players by relay id and/or account uid; returns how many. Their
+   * IPs are refused for a while (KICK_BLOCK_MS, BAN_BLOCK_MS for bans) so they
+   * cannot come straight back as guests.
+   */
   function kick({ id, uid }, code = CLOSE_KICKED, reason = 'kicked') {
     let count = 0;
+    const ms = code === CLOSE_BANNED ? BAN_BLOCK_MS : KICK_BLOCK_MS;
     for (const room of rooms.values()) {
       for (const p of room.players) {
         if ((id && p.id === id) || (uid && p.uid === uid)) {
+          const ip = p.ws.clientIp;
+          if (ip) blockedIps.set(ip, { until: Date.now() + ms, uid: code === CLOSE_BANNED ? uid || p.uid : '' });
           p.ws.close(code, reason);
           count++;
         }
@@ -621,7 +899,13 @@ export function createRealm(options = {}) {
 
   /** Record an admin ban decision; banning also disconnects the account. */
   function setBanned(uid, banned) {
-    forcedBans.set(uid, banned);
+    // An unban removes the override (Firestore decides again) instead of
+    // forcing "not banned" over a Firestore ban until the next restart.
+    if (banned) forcedBans.set(uid, true);
+    else {
+      forcedBans.delete(uid);
+      for (const [ip, block] of blockedIps) if (block.uid === uid) blockedIps.delete(ip);
+    }
     banCache.delete(uid);
     return banned ? kick({ uid }, CLOSE_BANNED, 'banned') : 0;
   }
@@ -645,7 +929,11 @@ export function createRealm(options = {}) {
   const accrueTimer = setInterval(() => {
     for (const uid of wallets.onlineUids()) {
       if (wallets.accrue(uid)) for (const p of sessionsOf(uid)) sendWallet(p);
+      refreshOnline(uid); // pauses wallets whose players went idle
     }
+    wallets.sweepGuests();
+    const now = Date.now();
+    for (const [ip, block] of blockedIps) if (block.until <= now) blockedIps.delete(ip);
   }, ACCRUE_MS);
 
   function close() {

@@ -39,7 +39,9 @@ html body #app {
   font-display: swap;
 }
 html {
-  --default-font: 'Stylish', sans-serif;
+  /* Google Fonts (link in index.html): Mali for text, Playwrite AU SA Guides for titles. */
+  --default-font: 'Mali', 'Stylish', sans-serif;
+  --heading-font: 'Playwrite AU SA Guides', 'Mali', 'Stylish', sans-serif;
 }
 
 #webgl {
@@ -340,112 +342,127 @@ html {
   box-shadow: 2px 2px #989389;
 }
 
-/* ---- sign-in / sign-up modal ---- */
+/* ---- sign-in / sign-up modal ----
+   Mirrors #info (the "i" about modal): same box, card layers, animation,
+   colours and type scale. No CSS backdrop: the scene fades via
+   webgl_overlay_animation, like #info. */
 #auth {
   display: none;
   position: absolute;
   inset: 0;
   z-index: 10;
-  justify-content: center;
-  align-items: center;
+  box-sizing: border-box;
+  padding: 30px; /* = #info .cnt margin */
+  overflow-y: auto; /* scroll the page, not the card: .cnt must not clip .bg-dark */
   font-family: var(--default-font);
   font-weight: 400;
-  color: #716c66;
-  background: rgba(113, 108, 102, 0.25);
+  text-align: left;
+  color: #989389;
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 #auth.visible { display: flex; }
-#auth .close-hit { position: absolute; inset: 0; cursor: pointer; }
+#auth .close-hit { position: fixed; inset: 0; cursor: pointer; }
 #auth .cnt {
   position: relative;
-  width: min(380px, calc(100vw - 32px));
-  box-sizing: border-box;
-  padding: 40px 40px 32px;
-  margin: 16px;
-  max-height: calc(100% - 32px);
-  overflow-y: auto;
+  margin: auto; /* centres, but stays scrollable when taller than the screen */
+  padding: 50px 60px;
 }
 #auth .cnt .bg-dark,
 #auth .cnt .bg-light {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   border-radius: 5px;
+  will-change: transform, scale;
 }
 #auth .cnt .bg-dark {
   background-color: #bab3a5;
   transform: translate(10px, 10px) rotate(1deg);
-  animation: modalpopdark 0.6s cubic-bezier(0.5, 0, 0.1, 1) both;
+  animation: modalpopdark 2s cubic-bezier(0.5, 0, 0.1, 1) both;
 }
 #auth .cnt .bg-light {
   background-color: #f9f2e4;
-  animation: modalpop 0.6s cubic-bezier(0.5, 0, 0.1, 1) 0.05s both;
+  animation: modalpop 2s cubic-bezier(0.5, 0, 0.1, 1) 0.15s both;
 }
 #auth form {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  animation: fadein 0.4s ease 0.25s both;
+  gap: 20px;
+  width: 600px; /* = #info article max-width (its text fills it) */
+  max-width: calc(100vw - 180px); /* 2×30 margin + 2×60 padding */
+  animation: fadein 0.75s ease 0.6s both;
 }
 #auth h1 {
-  margin: 0 0 4px;
-  font-size: 38px;
-  font-weight: 400;
+  font-size: 45px;
   line-height: 1em;
+  font-weight: 400;
   letter-spacing: -0.03em;
   color: #8d8981;
+  margin: 0 0 calc(1.3em - 20px); /* #info h1 margin, minus the form gap */
 }
 #auth label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 15px;
+  gap: 8px;
+  font-size: 24px;
+  letter-spacing: -0.03em;
+  line-height: 1em;
+  color: #989389;
 }
 #auth label[hidden] { display: none; }
 #auth input {
-  padding: 8px 10px;
-  border: 1.5px solid #716c66;
+  padding: 10px 12px;
+  border: none;
   border-radius: 5px;
   background: #fffdf8;
-  color: #4d4945;
+  box-shadow: 2px 2px #989389;
+  color: #716c66;
   font-family: inherit;
-  font-size: 16px; /* ≥16px: no zoom-on-focus on iOS */
+  font-size: 22px; /* >=16px: no zoom-on-focus on iOS */
+  letter-spacing: -0.02em;
   -webkit-user-select: text;
   user-select: text;
 }
-#auth input:focus { outline: 2px solid #b5a997; outline-offset: 1px; }
-#auth .auth-status { min-height: 1em; font-size: 14px; color: #a3523f; }
+#auth input:focus { outline: 2px solid #bab3a5; outline-offset: 2px; }
+#auth .auth-status { font-size: 20px; letter-spacing: -0.02em; color: #a3523f; }
 #auth .auth-status:empty { display: none; }
 #auth .auth-submit {
-  padding: 10px 14px;
+  margin-top: 6px;
+  padding: 12px 16px;
   border: none;
   border-radius: 5px;
-  background: #716c66;
-  color: #f9efdc;
+  background-color: #f5eede; /* same as .button-close */
+  box-shadow: 2px 2px #989389;
+  color: #8d8981;
   font-family: inherit;
-  font-size: 18px;
+  font-size: 26px;
+  letter-spacing: -0.03em;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 2px 2px #b5a997;
 }
-#auth .auth-submit:active { transform: translateY(2px); box-shadow: 1px 1px #b5a997; }
+#auth .auth-submit:active { transform: translateY(2px); box-shadow: 1px 1px #989389; }
 #auth .auth-submit[disabled] { opacity: 0.6; cursor: wait; }
-#auth .auth-switch { margin: 0; font-size: 15px; text-align: center; }
+#auth .auth-switch { margin: 0; font-size: 22px; letter-spacing: -0.03em; text-align: center; color: #989389; }
 #auth .auth-switch button {
   padding: 0;
   border: none;
   background: none;
-  color: #716c66;
+  color: #8d8981;
   font-family: inherit;
   font-size: inherit;
+  letter-spacing: inherit;
   text-decoration: underline;
-  text-underline-offset: 3px;
+  text-underline-offset: 4px;
   cursor: pointer;
 }
 #auth .button-close {
-  top: 18px;
-  right: 18px;
+  top: 30px;
+  right: 30px;
   background-color: #f5eede;
+  box-shadow: 2px 2px #989389;
 }
 
 /* ---- corner nav + buttons ---- */
@@ -495,7 +512,7 @@ nav svg.sound {
   left: 4px;
 }
 nav svg.sound2 { left: 8px; }
-nav .color-square {
+:is(nav, .nav-modal) .color-square {
   display: block;
   position: relative;
   width: 18px;
@@ -513,7 +530,7 @@ nav svg.emote {
   top: 6px;
   left: 6px;
 }
-nav .emote-menu {
+:is(nav, .nav-modal) .emote-menu {
   position: absolute;
   right: 48px;
   display: none;
@@ -525,8 +542,8 @@ nav .emote-menu {
   gap: 8px 10px;
   max-height: calc(100vh - 200px);
 }
-nav .emote-menu.open { display: flex; }
-nav .emote-menu button {
+:is(nav, .nav-modal) .emote-menu.open { display: flex; }
+:is(nav, .nav-modal) .emote-menu button {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -544,9 +561,9 @@ nav .emote-menu button {
   transform: rotate(-3deg);
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
-nav .emote-menu button:hover { transform: rotate(-3deg) translateX(-2px); }
-nav .emote-menu button:active { transform: rotate(-3deg) translateY(2px); box-shadow: 1px 1px #716c66; }
-nav .emote-menu kbd {
+:is(nav, .nav-modal) .emote-menu button:hover { transform: rotate(-3deg) translateX(-2px); }
+:is(nav, .nav-modal) .emote-menu button:active { transform: rotate(-3deg) translateY(2px); box-shadow: 1px 1px #716c66; }
+:is(nav, .nav-modal) .emote-menu kbd {
   display: inline-grid;
   place-items: center;
   min-width: 18px;
@@ -557,16 +574,7 @@ nav .emote-menu kbd {
   font-family: inherit;
   font-size: 12px;
 }
-nav svg.look {
-  display: block;
-  width: 19px;
-  height: 19px;
-  transform: rotate(-10deg);
-  position: absolute;
-  top: 6px;
-  left: 6px;
-}
-nav .look-menu {
+:is(nav, .nav-modal) .look-menu {
   position: absolute;
   right: 48px;
   display: none;
@@ -588,9 +596,83 @@ nav .look-menu {
   max-height: calc(100vh - 55px);
   overflow-y: auto;
 }
-nav .look-menu.open { display: flex; }
+:is(nav, .nav-modal) .look-menu.open { display: flex; }
+/* ---- nav panels as modals (overlay.ts mountPanelModal) ----
+   Same card as #info: dark + light layers popping in, content fading in,
+   centred on the washed-out scene (the nav is hidden meanwhile). */
+.nav-modal {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 9; /* under #auth (10), which can open on top */
+  box-sizing: border-box;
+  padding: 30px; /* = #info .cnt margin */
+  overflow-y: auto;
+  font-family: var(--default-font);
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+.nav-modal.visible { display: flex; }
+.nav-modal .close-hit { position: fixed; inset: 0; cursor: pointer; }
+.nav-modal .modal-card { position: relative; margin: auto; }
+.nav-modal .modal-card .bg-dark,
+.nav-modal .modal-card .bg-light {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  will-change: transform, scale;
+}
+.nav-modal .modal-card .bg-dark {
+  background-color: #bab3a5;
+  transform: translate(10px, 10px) rotate(1deg);
+  animation: modalpopdark 2s cubic-bezier(0.5, 0, 0.1, 1) both;
+}
+.nav-modal .modal-card .bg-light {
+  background-color: #f9f2e4;
+  animation: modalpop 2s cubic-bezier(0.5, 0, 0.1, 1) 0.15s both;
+}
+.nav-modal .modal-card .look-menu {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: 720px; /* = #info: 600px content + 2×60 padding */
+  max-width: calc(100vw - 60px);
+  max-height: calc(100vh - 60px);
+  padding: 50px 60px;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  gap: 12px;
+  scrollbar-width: thin; /* tall panels scroll inside the card */
+  scrollbar-color: #bab3a5 transparent;
+  animation: fadein 0.75s ease 0.6s both;
+}
+.nav-modal .modal-card .panel-bar {
+  top: -50px;
+  margin: -50px -60px 0;
+  padding: 50px 60px 18px;
+  background-color: #f9f2e4;
+  border-radius: 5px 5px 0 0;
+}
+.nav-modal .modal-card .panel-bar b {
+  font-size: 45px;
+  line-height: 1em;
+  letter-spacing: -0.03em;
+  color: #8d8981;
+}
+.nav-modal .modal-card .panel-close {
+  width: 32px;
+  height: 32px;
+  background-color: #f5eede;
+  box-shadow: 2px 2px #989389;
+  transform: rotate(10deg);
+}
+.nav-modal .modal-card .panel-close svg { width: 16px; height: 16px; transform: rotate(-10deg); }
 /* Title + close button, pinned while the panel scrolls (see panelBar.ts). */
-nav .panel-bar {
+:is(nav, .nav-modal) .panel-bar {
   position: sticky;
   top: -12px;
   z-index: 1;
@@ -603,8 +685,8 @@ nav .panel-bar {
   background-color: #f9efdc;
   border-radius: 6px 6px 0 0;
 }
-nav .panel-bar b { font-weight: 400; font-size: 18px; }
-nav .panel-close {
+:is(nav, .nav-modal) .panel-bar b { font-weight: 400; font-size: 18px; }
+:is(nav, .nav-modal) .panel-close {
   flex: none;
   display: grid;
   place-items: center;
@@ -619,12 +701,12 @@ nav .panel-close {
   cursor: pointer;
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
-nav .panel-close svg { width: 13px; height: 13px; transform: rotate(-8deg); }
-nav .panel-close:active { transform: rotate(8deg) translateY(2px); box-shadow: 1px 1px #716c66; }
-nav .panel-content { display: flex; flex-direction: column; gap: 8px; }
-nav .look-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-nav .look-group span { width: 100%; font-size: 14px; opacity: 0.8; }
-nav .look-group button {
+:is(nav, .nav-modal) .panel-close svg { width: 13px; height: 13px; transform: rotate(-8deg); }
+:is(nav, .nav-modal) .panel-close:active { transform: rotate(8deg) translateY(2px); box-shadow: 1px 1px #716c66; }
+:is(nav, .nav-modal) .panel-content { display: flex; flex-direction: column; gap: 8px; }
+:is(nav, .nav-modal) .look-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+:is(nav, .nav-modal) .look-group span { width: 100%; font-size: 14px; opacity: 0.8; }
+:is(nav, .nav-modal) .look-group button {
   padding: 5px 10px;
   border: 1.5px solid #716c66;
   border-radius: 5px;
@@ -637,7 +719,74 @@ nav .look-group button {
   cursor: pointer;
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
-nav .look-group button[aria-pressed='true'] { background: #716c66; color: #f9efdc; }
+:is(nav, .nav-modal) .look-group button[aria-pressed='true'],
+:is(nav, .nav-modal) .look-group button[aria-selected='true'] { background: #716c66; color: #f9efdc; }
+/* Picture buttons for presets and items (itemIcons.ts). */
+:is(nav, .nav-modal) .look-group button.look-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 8px;
+  background: #fffdf8;
+}
+:is(nav, .nav-modal) .look-group button.look-item[hidden] { display: none; } /* items not owned yet */
+:is(nav, .nav-modal) .look-group button.look-item svg { display: block; width: 34px; height: 34px; pointer-events: none; }
+:is(nav, .nav-modal) .look-group button.look-item:hover { background: #fff3d9; }
+:is(nav, .nav-modal) .look-group button.look-item[aria-pressed='true'] {
+  background: #fde7b8;
+  box-shadow: 0 0 0 2px #f9efdc, 0 0 0 4px #716c66;
+}
+/* Nhân vật tab: item groups in two columns so the whole tab fits without
+   scrolling; the colour row spans both. One column on narrow screens. */
+:is(nav, .nav-modal) .look-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 28px;
+  align-items: start;
+}
+:is(nav, .nav-modal) .look-grid[hidden] { display: none; }
+/* Tủ đồ tab: clothes pictures, then the picnic items and the shop link (wardrobe.ts). */
+:is(nav, .nav-modal) .wardrobe-pane { gap: 14px; }
+:is(nav, .nav-modal) .look-group button.look-item.highlight { border-color: #e0a34a; box-shadow: 0 0 0 3px rgba(224, 163, 74, 0.45); }
+:is(nav, .nav-modal) .look-grid .color-group { grid-column: 1 / -1; }
+:is(nav, .nav-modal) .look-grid .look-group span { margin-bottom: 2px; }
+/* Long greetings ("Xin chào Người dùng ẩn danh 56") stay on one line. */
+.nav-modal .modal-card .character-menu .panel-bar b { font-size: 34px; }
+.nav-modal .modal-card .character-menu { padding-bottom: 32px; gap: 10px; }
+@media (max-width: 1200px) {
+  .nav-modal .modal-card .character-menu .panel-bar b { font-size: 24px; }
+}
+@media (max-width: 560px) {
+  /* One column, each group's name to the left of its pictures. */
+  :is(nav, .nav-modal) .look-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  :is(nav, .nav-modal) .look-grid .look-group:not(.color-group) { flex-wrap: nowrap; gap: 5px; }
+  :is(nav, .nav-modal) .look-grid .look-group:not(.color-group) span { flex: 0 0 62px; width: auto; margin: 0; font-size: 13px; line-height: 1.15; }
+  :is(nav, .nav-modal) .look-grid .look-group button.look-item { width: 42px; height: 42px; flex: 0 0 auto; }
+  :is(nav, .nav-modal) .look-grid .look-group button.look-item svg { width: 32px; height: 32px; }
+}
+/* Clothes colour swatches (createColorRow in ui.ts). */
+:is(nav, .nav-modal) .color-group { gap: 7px; }
+:is(nav, .nav-modal) .look-group button.swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1.5px solid #716c66;
+  border-radius: 4px; /* square, like the nav colour square */
+  font-size: 14px;
+  line-height: 1;
+}
+:is(nav, .nav-modal) .look-group button.swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px #f9efdc, 0 0 0 3.5px #716c66;
+}
+:is(nav, .nav-modal) .look-group button.swatch-random { background: #f9efdc; }
+/* Character panel tabs: Nhân vật | Tủ đồ (see setupLookMenu in ui.ts). */
+:is(nav, .nav-modal) .character-tabs { flex-wrap: nowrap; }
+:is(nav, .nav-modal) .character-tabs button { flex: 1; }
+:is(nav, .nav-modal) .character-menu [role='tabpanel'][hidden] { display: none; }
+:is(nav, .nav-modal) .character-menu .wardrobe { display: flex; flex-direction: column; gap: 8px; }
 nav svg.info {
   display: block;
   width: 22px;
@@ -691,6 +840,15 @@ nav .cnt {
   #info h1 { font-size: 32px; }
   #info p { font-size: 25px; }
   #info .button-close { top: 24px; right: 24px; }
+  .nav-modal { padding: 20px; }
+  .nav-modal .modal-card .look-menu { padding: 40px 26px 30px; max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); }
+  .nav-modal .modal-card .panel-bar { top: -40px; margin: -40px -26px 0; padding: 40px 26px 14px; }
+  .nav-modal .modal-card .panel-bar b { font-size: 32px; }
+  #auth { padding: 20px; }
+  #auth .cnt { padding: 64px 26px 40px; }
+  #auth form { max-width: calc(100vw - 92px); } /* 2×20 margin + 2×26 padding */
+  #auth h1 { font-size: 32px; }
+  #auth .button-close { top: 24px; right: 24px; }
   .button { margin-bottom: 12px; }
   nav { top: 20px; right: 20px; }
   nav .cnt { font-size: 27px; }
@@ -710,29 +868,12 @@ nav svg.chat {
   left: 6px;
 }
 
-/* ---- display name (inside the character panel) ---- */
+/* ---- text inputs stay selectable ---- */
 nav input,
 #chat input {
   -webkit-user-select: text;
   user-select: text;
 }
-nav .name-group b { font-weight: 400; font-size: 18px; margin-right: 4px; overflow-wrap: anywhere; }
-nav .name-group button[disabled] { opacity: 0.5; cursor: not-allowed; }
-nav .name-form { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
-nav .name-form[hidden] { display: none; }
-nav .name-form input {
-  flex: 1 1 140px;
-  min-width: 0;
-  padding: 5px 8px;
-  border: 1.5px solid #716c66;
-  border-radius: 5px;
-  background: #fffdf8;
-  color: #4d4945;
-  font-family: inherit;
-  font-size: 16px; /* ≥16px: no zoom-on-focus on iOS */
-}
-nav .name-group small { width: 100%; font-size: 13px; }
-nav .name-group small:empty { display: none; }
 
 /* ---- speech bubbles over characters (no name labels) ---- */
 #nametags {
@@ -864,7 +1005,7 @@ nav svg.flower {
   top: 6px;
   left: 6px;
 }
-nav .button .badge {
+:is(nav, .nav-modal) .button .badge {
   position: absolute;
   top: -4px;
   right: -4px;
@@ -874,17 +1015,17 @@ nav .button .badge {
   background: #e0685a;
   box-shadow: 0 0 0 2px #f9efdc;
 }
-nav .button .badge[hidden] { display: none; }
-nav .button.rewarded { animation: rewarded 0.6s ease-out; }
+:is(nav, .nav-modal) .button .badge[hidden] { display: none; }
+:is(nav, .nav-modal) .button.rewarded { animation: rewarded 0.6s ease-out; }
 @keyframes rewarded {
   30% { transform: rotate(10deg) scale(1.25); }
 }
-nav .rewards-menu { width: min(330px, calc(100vw - 110px)); }
-nav .rewards-menu .look-group { gap: 8px; }
-nav .rewards-balance { font-size: 26px; font-weight: 400; color: #8a5a3c; }
-nav .rewards-menu button.primary { background: #716c66; color: #f9efdc; }
-nav .rewards-menu button[disabled] { opacity: 0.6; cursor: default; }
-nav .rewards-week {
+:is(nav, .nav-modal) .rewards-menu { width: min(330px, calc(100vw - 110px)); }
+:is(nav, .nav-modal) .rewards-menu .look-group { gap: 8px; }
+:is(nav, .nav-modal) .rewards-balance { font-size: 26px; font-weight: 400; color: #8a5a3c; }
+:is(nav, .nav-modal) :is(.rewards-menu, .guest-modal) button.primary { background: #716c66; color: #f9efdc; }
+:is(nav, .nav-modal) .rewards-menu button[disabled] { opacity: 0.6; cursor: default; }
+:is(nav, .nav-modal) .rewards-week {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
@@ -893,7 +1034,7 @@ nav .rewards-week {
   padding: 0;
   list-style: none;
 }
-nav .rewards-week li {
+:is(nav, .nav-modal) .rewards-week li {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -903,19 +1044,19 @@ nav .rewards-week li {
   font-size: 13px;
   line-height: 1.2;
 }
-nav .rewards-week li b { font-weight: 400; }
-nav .rewards-week li i { font-style: normal; opacity: 0.8; }
-nav .rewards-week li.today { border-color: #716c66; background: rgba(113, 108, 102, 0.12); }
-nav .rewards-week li.checked { background: #9bc2a4; border-color: #6f9c7b; color: #2f4a37; }
-nav .rewards-progress { width: 100%; height: 8px; border-radius: 4px; background: rgba(113, 108, 102, 0.2); overflow: hidden; }
-nav .rewards-progress div { height: 100%; background: #e0a34a; transition: width 0.5s; }
-nav .rewards-tiers { display: flex; flex-direction: column; gap: 6px; width: 100%; margin: 0; padding: 0; list-style: none; }
-nav .rewards-tiers li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-nav .rewards-menu .rewards-tiers li span { width: auto; font-size: 15px; opacity: 1; }
-nav .rewards-note { margin: 0; font-size: 13px; opacity: 0.8; }
-nav .rewards-toast { margin: 0; font-size: 15px; color: #8a5a3c; min-height: 1.2em; }
-nav .rewards-toast:empty { display: none; }
-nav .rewards-steps { grid-template-columns: repeat(3, 1fr); }
+:is(nav, .nav-modal) .rewards-week li b { font-weight: 400; }
+:is(nav, .nav-modal) .rewards-week li i { font-style: normal; opacity: 0.8; }
+:is(nav, .nav-modal) .rewards-week li.today { border-color: #716c66; background: rgba(113, 108, 102, 0.12); }
+:is(nav, .nav-modal) .rewards-week li.checked { background: #9bc2a4; border-color: #6f9c7b; color: #2f4a37; }
+:is(nav, .nav-modal) .rewards-progress { width: 100%; height: 8px; border-radius: 4px; background: rgba(113, 108, 102, 0.2); overflow: hidden; }
+:is(nav, .nav-modal) .rewards-progress div { height: 100%; background: #e0a34a; transition: width 0.5s; }
+:is(nav, .nav-modal) .rewards-tiers { display: flex; flex-direction: column; gap: 6px; width: 100%; margin: 0; padding: 0; list-style: none; }
+:is(nav, .nav-modal) .rewards-tiers li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+:is(nav, .nav-modal) .rewards-menu .rewards-tiers li span { width: auto; font-size: 15px; opacity: 1; }
+:is(nav, .nav-modal) .rewards-note { margin: 0; font-size: 13px; opacity: 0.8; }
+:is(nav, .nav-modal) .rewards-toast { margin: 0; font-size: 15px; color: #8a5a3c; min-height: 1.2em; }
+:is(nav, .nav-modal) .rewards-toast:empty { display: none; }
+:is(nav, .nav-modal) .rewards-steps { grid-template-columns: repeat(3, 1fr); }
 
 /* ---- shop & bag (bag button) ---- */
 nav svg.bag {
@@ -927,12 +1068,8 @@ nav svg.bag {
   top: 5px;
   left: 6px;
 }
-nav .look-group button.locked { border-style: dashed; opacity: 0.75; }
-nav .emote-menu .lock { display: none; font-size: 12px; }
-nav .emote-menu button.locked { opacity: 0.7; }
-nav .emote-menu button.locked .lock { display: inline; }
-nav .shop-menu { width: min(360px, calc(100vw - 110px)); }
-nav .shop-menu button {
+:is(nav, .nav-modal) .shop-menu { width: min(360px, calc(100vw - 110px)); }
+:is(nav, .nav-modal) .shop-menu button {
   padding: 5px 10px;
   border: 1.5px solid #716c66;
   border-radius: 5px;
@@ -945,13 +1082,13 @@ nav .shop-menu button {
   cursor: pointer;
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
-nav .shop-menu button.primary,
-nav .shop-menu button[aria-pressed='true'],
-nav .shop-menu button[aria-selected='true'] { background: #716c66; color: #f9efdc; }
-nav .shop-menu button[disabled] { opacity: 0.6; cursor: default; }
-nav .shop-menu button.confirm { background: #e0a34a; border-color: #b97d2c; color: #3d2a12; }
-nav .shop-menu button.link { padding: 0; border: none; text-decoration: underline; font-size: inherit; }
-nav .shop-menu kbd {
+:is(nav, .nav-modal) .shop-menu button.primary,
+:is(nav, .nav-modal) .shop-menu button[aria-pressed='true'],
+:is(nav, .nav-modal) .shop-menu button[aria-selected='true'] { background: #716c66; color: #f9efdc; }
+:is(nav, .nav-modal) .shop-menu button[disabled] { opacity: 0.6; cursor: default; }
+:is(nav, .nav-modal) .shop-menu button.confirm { background: #e0a34a; border-color: #b97d2c; color: #3d2a12; }
+:is(nav, .nav-modal) :is(.shop-menu, .wardrobe-pane) button.link { padding: 0; border: none; background: none; color: inherit; font-family: inherit; text-decoration: underline; font-size: inherit; cursor: pointer; }
+:is(nav, .nav-modal) .shop-menu kbd {
   display: inline-grid;
   place-items: center;
   min-width: 15px;
@@ -963,12 +1100,10 @@ nav .shop-menu kbd {
   font-family: inherit;
   font-size: 11px;
 }
-nav .shop-head { justify-content: space-between; }
-nav .shop-tabs { display: flex; gap: 6px; }
-nav .shop-tabs button { flex: 1; }
-nav .shop-filters { display: flex; flex-wrap: wrap; gap: 5px; }
-nav .shop-filters button { padding: 4px 8px; font-size: 13px; }
-nav .shop-grid {
+:is(nav, .nav-modal) .shop-head { justify-content: space-between; }
+:is(nav, .nav-modal) .shop-filters { display: flex; flex-wrap: wrap; gap: 5px; }
+:is(nav, .nav-modal) .shop-filters button { padding: 4px 8px; font-size: 13px; }
+:is(nav, .nav-modal) .shop-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
   gap: 6px;
@@ -977,7 +1112,7 @@ nav .shop-grid {
   padding: 0;
   list-style: none;
 }
-nav .shop-card {
+:is(nav, .nav-modal) .shop-card {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -988,9 +1123,470 @@ nav .shop-card {
   text-align: center;
   line-height: 1.15;
 }
-nav .shop-card.highlight { border-color: #e0a34a; background: rgba(224, 163, 74, 0.15); }
-nav .shop-icon { font-size: 26px; line-height: 1.1; }
-nav .shop-card b { font-weight: 400; font-size: 14px; }
-nav .shop-card small { font-size: 11px; opacity: 0.7; }
-nav .shop-card button { margin-top: 3px; padding: 4px 7px; font-size: 13px; }
-nav .shop-empty { opacity: 0.8; font-size: 14px; }
+:is(nav, .nav-modal) .shop-card.highlight { border-color: #e0a34a; background: rgba(224, 163, 74, 0.15); }
+:is(nav, .nav-modal) .shop-icon { font-size: 26px; line-height: 1.1; }
+:is(nav, .nav-modal) .shop-icon svg { display: block; width: 36px; height: 36px; margin: 0 auto; }
+:is(nav, .nav-modal) .shop-card b { font-weight: 400; font-size: 14px; }
+:is(nav, .nav-modal) .shop-card small { font-size: 11px; opacity: 0.7; }
+:is(nav, .nav-modal) .shop-card button { margin-top: 3px; padding: 4px 7px; font-size: 13px; }
+:is(nav, .nav-modal) .shop-empty { opacity: 0.8; font-size: 14px; }
+
+/* ---- "Bạn cần có [vật phẩm]" notice (ui.ts setupItemNotice) ---- */
+#item-notice {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  z-index: 11; /* above the modals (9) and the sign-in dialog (10) */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px 9px 16px;
+  border-radius: 6px;
+  background: #f9efdc;
+  box-shadow: 2px 2px #716c66;
+  color: #716c66;
+  font-family: var(--default-font);
+  font-size: 17px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -8px) rotate(-1deg);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+#item-notice.show { opacity: 1; pointer-events: auto; transform: translate(-50%, 0) rotate(-1deg); }
+#item-notice button {
+  padding: 5px 10px;
+  border: 1.5px solid #716c66;
+  border-radius: 5px;
+  background: #716c66;
+  color: #f9efdc;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* Stone benches: key prompt near a bench (scene/benches.ts). */
+.bench-prompt {
+  position: fixed;
+  left: 50%;
+  bottom: max(96px, calc(env(safe-area-inset-bottom) + 96px));
+  z-index: 5;
+  display: none;
+  gap: 10px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.bench-prompt.open { display: flex; }
+.bench-prompt button,
+.bench-prompt span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 7px;
+  border: none;
+  border-radius: 5px;
+  background-color: #f9efdc;
+  box-shadow: 2px 2px #716c66;
+  color: #716c66;
+  font-family: var(--default-font);
+  font-size: 16px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.bench-prompt span { padding-left: 12px; cursor: default; }
+.bench-prompt button:active { transform: translateY(2px); box-shadow: 1px 1px #716c66; }
+.bench-prompt kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: #716c66;
+  color: #f9efdc;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+/* Fishing (scene/fishingGame.ts): no text on screen, the player reads the
+   bobber and the rod. Touch screens get one round button (tap = strike, hold
+   = reel); keyboards use Space, so the button stays hidden there. */
+.fishing-button {
+  position: fixed;
+  right: max(24px, calc(env(safe-area-inset-right) + 24px));
+  bottom: max(120px, calc(env(safe-area-inset-bottom) + 120px));
+  z-index: 5;
+  display: none;
+  width: 72px;
+  height: 72px;
+  border: none;
+  border-radius: 50%;
+  background-color: #f9efdc;
+  box-shadow: 2px 2px #716c66;
+  font-size: 34px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+@media (pointer: coarse) {
+  .fishing-button.open { display: block; }
+}
+.fishing-button.held { transform: translateY(2px); box-shadow: 1px 1px #716c66; }
+
+/* ---- guest wallet banner (guestNote.ts, rewards + shop panels) ---- */
+:is(nav, .nav-modal) .guest-note {
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1.5px dashed #e0a34a;
+  border-radius: 6px;
+  background: rgba(224, 163, 74, 0.12);
+}
+:is(nav, .nav-modal) .guest-note p { width: 100%; margin: 0; font-size: 15px; line-height: 1.35; }
+:is(nav, .nav-modal) .guest-note b { font-weight: 700; }
+
+/* ---- guest "Lưu dữ liệu của bạn" modal (guestModal.ts) ---- */
+.nav-modal .modal-card .look-menu.guest-modal { width: 560px; gap: 14px; }
+.nav-modal .modal-card .guest-modal .panel-bar b { font-size: 34px; }
+:is(nav, .nav-modal) .guest-modal p,
+:is(nav, .nav-modal) .guest-modal li { margin: 0; font-size: 18px; line-height: 1.45; }
+:is(nav, .nav-modal) .guest-modal b { font-weight: 700; }
+:is(nav, .nav-modal) .guest-modal-points { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
+:is(nav, .nav-modal) .guest-modal-actions { gap: 10px; margin-top: 4px; }
+:is(nav, .nav-modal) .guest-modal-actions button { font-size: 16px; padding: 8px 14px; }
+:is(nav, .nav-modal) .guest-modal-actions button.link { padding: 8px 4px; border: none; background: none; color: inherit; text-decoration: underline; }
+@media (max-width: 1200px) {
+  .nav-modal .modal-card .guest-modal .panel-bar b { font-size: 26px; }
+  :is(nav, .nav-modal) .guest-modal p,
+  :is(nav, .nav-modal) .guest-modal li { font-size: 16px; }
+}
+
+/* Playing together: an invitation from another player (scene/together.ts). */
+.together-prompt {
+  position: fixed;
+  left: 50%;
+  top: max(18px, env(safe-area-inset-top));
+  z-index: 6;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 10px 8px 14px;
+  border-radius: 6px;
+  background-color: #f9efdc;
+  box-shadow: 2px 2px #716c66;
+  color: #716c66;
+  font-family: var(--default-font);
+  font-size: 16px;
+  transform: translateX(-50%);
+}
+.together-prompt.open { display: flex; }
+.together-prompt p { margin: 0; }
+.together-prompt b { color: #c0563b; }
+.together-prompt button {
+  flex: none;
+  padding: 5px 12px;
+  border: 1.5px solid #716c66;
+  border-radius: 5px;
+  background: #fffaf0;
+  color: #716c66;
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.together-prompt button[data-answer='yes'] { background: #716c66; color: #f9efdc; }
+.together-prompt button:active { transform: translateY(1px); }
+:is(nav, .nav-modal) .emote-menu kbd.together { background: #c0563b; }
+
+/* ---- screenshot (components/screenshot.ts) ---- */
+nav svg.camera {
+  display: block;
+  width: 20px;
+  height: 17px;
+  transform: rotate(-10deg);
+  position: absolute;
+  top: 8px;
+  left: 6px;
+}
+/* Camera flash: a white blink over everything. */
+.shot-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: #fffdf8;
+  opacity: 0;
+  pointer-events: none;
+}
+.shot-flash.on { animation: shot-flash 0.45s ease-out; }
+@keyframes shot-flash {
+  0% { opacity: 0; }
+  12% { opacity: 0.95; }
+  100% { opacity: 0; }
+}
+/* The picture card, like a printed photo in the free top-left corner. */
+.shot-card {
+  position: fixed;
+  top: max(24px, env(safe-area-inset-top));
+  left: max(24px, env(safe-area-inset-left));
+  z-index: 25;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  width: min(240px, 42vw);
+  padding: 8px 8px 10px;
+  border-radius: 6px;
+  background: #f9efdc;
+  box-shadow: 3px 3px #716c66;
+  transform: rotate(-2deg);
+  transform-origin: center;
+  color: #716c66;
+  font-family: var(--default-font);
+}
+.shot-card.visible { display: flex; }
+.shot-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 3px;
+  background: #e6d8bd;
+}
+.shot-card .shot-actions { display: flex; gap: 8px; }
+.shot-card .shot-download,
+.shot-card .shot-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  border: none;
+  border-radius: 5px;
+  background: #716c66;
+  color: #f9efdc;
+  font: inherit;
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.shot-card .shot-download { flex: 1; }
+.shot-card .shot-close { width: 32px; background: #e6d8bd; color: #716c66; }
+.shot-card svg { width: 15px; height: 15px; }
+.shot-card .shot-download:active,
+.shot-card .shot-close:active { transform: translateY(1px); }
+@media (prefers-reduced-motion: reduce) {
+  .shot-flash.on { animation-duration: 0.2s; }
+}
+
+/* ---- "Quên mật khẩu?" link in the sign-in form (authModal.ts) ---- */
+#auth .auth-forgot {
+  align-self: flex-end;
+  margin-top: -6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #989389;
+  font-family: inherit;
+  font-size: 18px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+#auth .auth-forgot[hidden] { display: none; }
+#auth .auth-forgot[disabled] { opacity: 0.6; cursor: wait; }
+
+/* ---- account card at the top of the character panel (ui.ts createAccountSection) ---- */
+:is(nav, .nav-modal) .account-card {
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1.5px solid rgba(113, 108, 102, 0.35);
+  border-radius: 6px;
+  background: rgba(255, 253, 248, 0.6);
+}
+:is(nav, .nav-modal) .account-info { display: flex; flex-direction: column; flex: 1 1 200px; min-width: 0; gap: 2px; }
+:is(nav, .nav-modal) .account-name { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+:is(nav, .nav-modal) .account-sub { font-size: 13px; opacity: 0.8; overflow-wrap: anywhere; }
+:is(nav, .nav-modal) .account-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+:is(nav, .nav-modal) .account-actions:empty { display: none; }
+:is(nav, .nav-modal) .account-card button.primary { background: #716c66; color: #f9efdc; }
+:is(nav, .nav-modal) .account-card button.danger { border-color: #a3523f; color: #a3523f; }
+:is(nav, .nav-modal) .account-rename { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+:is(nav, .nav-modal) .account-rename[hidden] { display: none; }
+:is(nav, .nav-modal) .account-rename input {
+  flex: 1 1 160px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1.5px solid #716c66;
+  border-radius: 5px;
+  background: #fffdf8;
+  color: #4d4945;
+  font-family: inherit;
+  font-size: 16px; /* ≥16px: no zoom-on-focus on iOS */
+}
+:is(nav, .nav-modal) .account-status { width: 100%; font-size: 13px; }
+:is(nav, .nav-modal) .account-status:empty { display: none; }
+
+/* ---- titles use the heading font (--heading-font) ---- */
+#loader h1,
+#info h1,
+#auth h1,
+:is(nav, .nav-modal) .panel-bar b {
+  font-family: var(--heading-font);
+  font-weight: 400;
+}
+
+/* ---- fish pull bar while fighting a fish (scene/fishingGame.ts) ---- */
+.fish-pull {
+  position: fixed;
+  left: 50%;
+  bottom: max(120px, calc(env(safe-area-inset-bottom) + 120px));
+  z-index: 6;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  width: min(300px, calc(100vw - 48px));
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(249, 239, 220, 0.92);
+  box-shadow: 2px 2px #716c66;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.fish-pull.open { display: flex; }
+.fish-pull span { font-size: 18px; line-height: 1; }
+.fish-pull-track {
+  flex: 1;
+  height: 12px;
+  border-radius: 6px;
+  background: #e6d8bd;
+  overflow: hidden;
+}
+.fish-pull-fill {
+  width: 0;
+  height: 100%;
+  border-radius: 6px;
+  background: #6aa86f;
+  transition: background-color 0.2s;
+}
+.fish-pull[data-level='mid'] .fish-pull-fill { background: #e0a93a; }
+.fish-pull[data-level='high'] .fish-pull-fill { background: #d6403a; }
+/* Close to snapping: the whole bar trembles. */
+.fish-pull[data-level='high'] { animation: fish-pull-shake 0.12s linear infinite; }
+@keyframes fish-pull-shake {
+  0%, 100% { transform: translateX(-50%); }
+  25% { transform: translateX(calc(-50% - 2px)); }
+  75% { transform: translateX(calc(-50% + 2px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fish-pull[data-level='high'] { animation: none; }
+}
+
+/* ---- feedback (components/feedback.ts, letter button) ---- */
+nav svg.letter {
+  display: block;
+  width: 20px;
+  height: 15px;
+  transform: rotate(-10deg);
+  position: absolute;
+  top: 9px;
+  left: 6px;
+}
+:is(nav, .nav-modal) .feedback-menu { width: min(420px, calc(100vw - 110px)); }
+.nav-modal .modal-card .look-menu.feedback-menu { width: 600px; }
+:is(nav, .nav-modal) .feedback-form { display: flex; flex-direction: column; gap: 10px; margin: 0; }
+:is(nav, .nav-modal) .feedback-form span { font-size: 15px; line-height: 1.4; }
+:is(nav, .nav-modal) .feedback-form textarea {
+  width: 100%;
+  min-height: 130px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1.5px solid #716c66;
+  border-radius: 5px;
+  background: #fffaf0;
+  color: #4f4a44;
+  font-family: inherit;
+  font-size: 16px; /* ≥ 16px: no zoom on focus in iOS Safari */
+  line-height: 1.45;
+  resize: vertical;
+  outline: none;
+}
+:is(nav, .nav-modal) .feedback-form textarea:focus { border-color: #e0a34a; box-shadow: 0 0 0 3px rgba(224, 163, 74, 0.3); }
+:is(nav, .nav-modal) .feedback-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+:is(nav, .nav-modal) .feedback-count { font-size: 13px; opacity: 0.7; font-variant-numeric: tabular-nums; }
+:is(nav, .nav-modal) .feedback-menu button {
+  padding: 8px 14px;
+  border: 1.5px solid #716c66;
+  border-radius: 5px;
+  background: transparent;
+  color: #716c66;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+:is(nav, .nav-modal) .feedback-menu button.primary { background: #716c66; color: #f9efdc; }
+:is(nav, .nav-modal) .feedback-menu button[disabled] { opacity: 0.5; cursor: default; }
+:is(nav, .nav-modal) .feedback-menu .panel-close { padding: 0; }
+/* Thank-you letter: a little card with a stamp, tilted like the other cards. */
+:is(nav, .nav-modal) .thank-card {
+  position: relative;
+  padding: 22px 24px 20px;
+  border: 1.5px dashed #c9a77a;
+  border-radius: 6px;
+  background:
+    repeating-linear-gradient(transparent 0 27px, rgba(201, 167, 122, 0.22) 27px 28px),
+    #fffaf0;
+  box-shadow: 3px 3px #bab3a5;
+  color: #5d5852;
+  transform: rotate(-1deg);
+}
+:is(nav, .nav-modal) .thank-card.fresh { animation: thankin 0.7s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+:is(nav, .nav-modal) .thank-card p { margin: 0 0 10px; font-size: 16px; line-height: 1.6; }
+:is(nav, .nav-modal) .thank-card .thank-greeting { font-size: 20px; color: #8a5a3c; }
+:is(nav, .nav-modal) .thank-card .thank-sign { margin: 14px 0 0; text-align: right; }
+:is(nav, .nav-modal) .thank-card .thank-sign b { font-weight: 700; }
+:is(nav, .nav-modal) .thank-stamp {
+  position: absolute;
+  top: -14px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 2px dotted #e0a34a;
+  border-radius: 4px;
+  background: #f9efdc;
+  font-size: 24px;
+  transform: rotate(8deg);
+}
+:is(nav, .nav-modal) .thank-close { align-self: center; margin-top: 6px; }
+@keyframes thankin {
+  from { opacity: 0; transform: translateY(16px) rotate(-6deg) scale(0.9); }
+  to { opacity: 1; transform: rotate(-1deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(nav, .nav-modal) .thank-card.fresh { animation: none; }
+}
+
+/* ---- welcome letter on connect (components/welcomeLetter.ts) ----
+   The card itself is the feedback thank-you card (.thank-card, .thank-stamp). */
+.welcome-modal { z-index: 20; }
+.welcome-modal .welcome-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(420px, calc(100vw - 40px));
+}
+.welcome-modal .thank-close {
+  padding: 10px 22px;
+  border: none;
+  border-radius: 5px;
+  background: #716c66;
+  box-shadow: 2px 2px #4d4945;
+  color: #f9efdc;
+  font-family: var(--default-font);
+  font-size: 16px;
+  cursor: pointer;
+}
+.welcome-modal .thank-close:active { transform: translateY(2px); box-shadow: 1px 1px #4d4945; }

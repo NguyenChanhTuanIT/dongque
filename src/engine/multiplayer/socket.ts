@@ -3,10 +3,13 @@
 //
 // Server messages: 1 WELCOME [u32 id] · 2 STATES [u16 n]{[u32 id][26 B]} ·
 // 3 LEAVE [u32 id] · 4 OUTFIT · 5 NAME [u32 id][u8 n][name] · 6 CHAT [u32 id][text]
-// · 7 NOTICE [u8 code]. Close codes 4001 (kicked) / 4003 (banned) stop reconnecting.
+// · 7 NOTICE [u8 code] · 8 WALLET · 9 SOCIAL [u8 kind][u32 from][u8 activity]
+// · 10 TIME [f64 clientMs][f64 serverMs]. Close codes 4001 (kicked) / 4003 (banned) stop reconnecting.
 // Client → server: one 26-byte state frame, or
 // [2] OUTFIT · [3] PROFILE [u16 n][ID token][u8 m][name] · [4] CHAT [text]
-// · [5] REWARD · [6] VISIBLE · [7] SHOP [JSON]. An OUTFIT with our own id is the
+// · [5] REWARD · [6] VISIBLE · [7] SHOP [JSON] · [9] SOCIAL [u8 kind][u32 target][u8 activity]
+// · [10] TIME [f64 clientMs] · [8] GUEST [key] (this tab's guest
+// wallet, see guestKey()). An OUTFIT with our own id is the
 // relay correcting / restoring our outfit (shop ownership, account outfit).
 
 import { STATE_BYTES, decodeState, encodeState } from './codec';
@@ -20,12 +23,41 @@ const MSG_NAME = 5;
 const MSG_CHAT = 6;
 const MSG_NOTICE = 7;
 const MSG_WALLET = 8;
+const MSG_SOCIAL = 9;
+const MSG_TIME = 10;
 const CLIENT_OUTFIT = 2; // client → server: [2][u8 n][n bytes]
 const CLIENT_PROFILE = 3;
 const CLIENT_CHAT = 4;
 const CLIENT_REWARD = 5;
 const CLIENT_VISIBLE = 6;
 const CLIENT_SHOP = 7;
+const CLIENT_GUEST = 8;
+const CLIENT_SOCIAL = 9;
+const CLIENT_TIME = 10;
+/** Shared-clock pings: a few at join, then one every TIME_PING_MS. */
+const TIME_PING_MS = 15_000;
+const GUEST_KEY_STORAGE = 'relaxtime-guest-key';
+
+/**
+ * Secret key of this tab's guest wallet (server/wallets.mjs "Guests"): kept in
+ * sessionStorage, so it survives reloads but not closing the tab.
+ */
+function guestKey(): string {
+  try {
+    const saved = sessionStorage.getItem(GUEST_KEY_STORAGE);
+    if (saved && /^[A-Za-z0-9_-]{16,64}$/.test(saved)) return saved;
+  } catch {
+    /* storage blocked: a key for this page load only */
+  }
+  const bytes = crypto.getRandomValues(new Uint8Array(18));
+  const key = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  try {
+    sessionStorage.setItem(GUEST_KEY_STORAGE, key);
+  } catch {
+    /* see above */
+  }
+  return key;
+}
 /** REWARD actions (server/realm.mjs): 2 + i claims online tier i. */
 export const REWARD_STATUS = 0;
 export const REWARD_CHECKIN = 1;
@@ -39,6 +71,8 @@ export const NOTICE_BAD_NAME = 2;
 export const NOTICE_LOGIN_UNAVAILABLE = 3;
 export const NOTICE_CHAT_TOO_FAST = 4;
 export const NOTICE_BANNED = 5;
+/** Display name taken by another player online, or reserved (admin, system…). */
+export const NOTICE_NAME_TAKEN = 6;
 /** WebSocket close codes the relay uses for admin actions (no automatic reconnect). */
 export const CLOSE_KICKED = 4001;
 export const CLOSE_BANNED = 4003;
@@ -83,6 +117,8 @@ export interface SocketConnectionOptions extends ConnectionOptions {
   onOwnOutfit?: (outfit: number[]) => void;
   /** An admin removed us (CLOSE_KICKED / CLOSE_BANNED); the connection stays closed. */
   onKicked?: (code: number) => void;
+  /** Play-together message (server/realm.mjs SOCIAL): kind, the other player's id, activity. */
+  onSocial?: (kind: number, id: string, activity: number) => void;
 }
 
 export class SocketConnection implements MultiplayerConnection {
@@ -105,6 +141,11 @@ export class SocketConnection implements MultiplayerConnection {
   private _onOwnOutfit: (outfit: number[]) => void;
   private _onLeave: (id: string) => void;
   private _onKicked: (code: number) => void;
+  private _onSocial: (kind: number, id: string, activity: number) => void;
+  /** Server time - performance.now(), from the ping with the shortest round trip. */
+  private _clockOffset: number | null = null;
+  private _clockRtt = Infinity;
+  private _timeInterval: ReturnType<typeof setInterval> | null = null;
   private _prevPayload = '';
   private _lastSent = 0;
   private _frame = new Uint8Array(STATE_BYTES);
@@ -132,6 +173,7 @@ export class SocketConnection implements MultiplayerConnection {
     this._onOwnOutfit = options.onOwnOutfit ?? noop;
     this._onLeave = options.onLeave ?? noop;
     this._onKicked = options.onKicked ?? noop;
+    this._onSocial = options.onSocial ?? noop;
     const url = new URL(options.url);
     url.searchParams.set('room', options.room ?? 'main');
     this._url = url.toString();
@@ -169,6 +211,8 @@ export class SocketConnection implements MultiplayerConnection {
         this._selfId = String(view.getUint32(1, true));
         this._retryDelay = RECONNECT_MIN_MS;
         this._onConnect();
+        // Guest wallet first, so the outfit check already sees what it owns.
+        this._ws?.send(new Uint8Array([CLIENT_GUEST, ...encoder.encode(guestKey())]));
         this._sendVisibility();
         this._sendOutfit(this._getOutfit());
         const profile = this._getProfile();
@@ -176,6 +220,9 @@ export class SocketConnection implements MultiplayerConnection {
         this._send(true);
         this._sendInterval = setInterval(() => this._send(), this._updateRate);
         this._sweepInterval = setInterval(() => this._sweep(), 1000);
+        this._clockRtt = Infinity;
+        for (let k = 0; k < 4; k++) setTimeout(this._pingTime, k * 400);
+        this._timeInterval = setInterval(this._pingTime, TIME_PING_MS);
         console.info(`[mp] joined as #${this._selfId}`);
         return;
       }
@@ -247,11 +294,58 @@ export class SocketConnection implements MultiplayerConnection {
         }
         return;
       }
+      case MSG_SOCIAL: {
+        if (view.byteLength < 7) return;
+        this._onSocial(view.getUint8(1), String(view.getUint32(2, true)), view.getUint8(6));
+        return;
+      }
+      case MSG_TIME: {
+        if (view.byteLength < 17) return;
+        const sent = view.getFloat64(1, true);
+        const server = view.getFloat64(9, true);
+        const now = performance.now();
+        const rtt = now - sent;
+        // Older samples count less, so a drifting clock is followed.
+        this._clockRtt += 5;
+        if (rtt >= 0 && rtt <= this._clockRtt) {
+          this._clockRtt = rtt;
+          this._clockOffset = server + rtt / 2 - now;
+        }
+        return;
+      }
       case MSG_NOTICE: {
         if (view.byteLength >= 2) this._onNotice(view.getUint8(1));
         return;
       }
     }
+  }
+
+  private _pingTime = () => {
+    const ws = this._ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const msg = new DataView(new ArrayBuffer(9));
+    msg.setUint8(0, CLIENT_TIME);
+    msg.setFloat64(1, performance.now(), true);
+    ws.send(msg.buffer);
+  };
+
+  /** Server clock in ms (same for every player of the room), or null before the first answer. */
+  sharedNowMs(): number | null {
+    return this._clockOffset === null ? null : performance.now() + this._clockOffset;
+  }
+
+  /** Play-together message to player `id`; false while offline. */
+  sendSocial(kind: number, id: string, activity: number): boolean {
+    const ws = this._ws;
+    const target = Number(id);
+    if (!ws || ws.readyState !== WebSocket.OPEN || !this._selfId || !Number.isInteger(target)) return false;
+    const msg = new DataView(new ArrayBuffer(7));
+    msg.setUint8(0, CLIENT_SOCIAL);
+    msg.setUint8(1, kind);
+    msg.setUint32(2, target, true);
+    msg.setUint8(6, activity);
+    ws.send(msg.buffer);
+    return true;
   }
 
   /** Our id in the room ('' while disconnected). */
@@ -276,9 +370,18 @@ export class SocketConnection implements MultiplayerConnection {
 
   /** Buy a shop item at the price we show; false while offline. The answer is a WALLET with a `shop` result. */
   sendShop(item: string, price: number): boolean {
+    return this._sendShopJson({ buy: item, price });
+  }
+
+  /** Our item broke (the fishing rod): the relay takes it out of the wallet (a WALLET with a `broke` result). */
+  sendBreak(item: string): boolean {
+    return this._sendShopJson({ broke: item });
+  }
+
+  private _sendShopJson(body: object): boolean {
     const ws = this._ws;
     if (!ws || ws.readyState !== WebSocket.OPEN || !this._selfId) return false;
-    const bytes = encoder.encode(JSON.stringify({ buy: item, price }));
+    const bytes = encoder.encode(JSON.stringify(body));
     const msg = new Uint8Array(1 + bytes.length);
     msg[0] = CLIENT_SHOP;
     msg.set(bytes, 1);
@@ -372,6 +475,8 @@ export class SocketConnection implements MultiplayerConnection {
   private _handleClose(code: number) {
     if (this._sendInterval) clearInterval(this._sendInterval);
     if (this._sweepInterval) clearInterval(this._sweepInterval);
+    if (this._timeInterval) clearInterval(this._timeInterval);
+    this._timeInterval = null;
     this._sendInterval = null;
     this._sweepInterval = null;
     this._ws = null;

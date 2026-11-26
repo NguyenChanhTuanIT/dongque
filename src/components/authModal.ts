@@ -2,9 +2,9 @@
 // ("Đăng nhập"); new players switch to the sign-up tab, which also picks the
 // display name.
 
-import { events } from '../core/events';
+import { setOverlay } from './overlay';
 import { NAME_MAX_CHARS, NAME_MIN_CHARS } from '../engine/multiplayer/socket';
-import { authErrorMessage, registerWithEmail, setName, signInWithEmail } from '../social/auth';
+import { authErrorMessage, isLoginAvailable, registerWithEmail, resetPassword, setName, signInWithEmail } from '../social/auth';
 
 const closeIcon = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="m1.5 1.5 15 15m0-15-15 15" stroke="#989389" stroke-width="2" stroke-linecap="round"/></svg>';
 
@@ -38,6 +38,7 @@ export class AuthModal {
   private readonly switchText: HTMLElement;
   private readonly switchButton: HTMLButtonElement;
   private readonly status: HTMLElement;
+  private readonly forgotButton: HTMLButtonElement;
   private mode: Mode = 'login';
   private busy = false;
   private onDone: (() => void) | null = null;
@@ -56,6 +57,7 @@ export class AuthModal {
       '<label class="auth-name">Tên hiển thị<input type="text" name="name" autocomplete="nickname"></label>' +
       '<label>Email<input type="email" name="email" autocomplete="email" inputmode="email" required></label>' +
       '<label>Mật khẩu<input type="password" name="password" required minlength="6"></label>' +
+      '<button type="button" class="auth-forgot">Quên mật khẩu?</button>' +
       '<label class="auth-confirm">Nhập lại mật khẩu<input type="password" name="confirm" autocomplete="new-password" minlength="6"></label>' +
       '<small class="auth-status" aria-live="polite"></small>' +
       '<button type="submit" class="auth-submit"></button>' +
@@ -76,6 +78,8 @@ export class AuthModal {
     this.switchText = this.root.querySelector('.auth-switch span') as HTMLElement;
     this.switchButton = this.root.querySelector('.auth-switch button') as HTMLButtonElement;
     this.status = this.root.querySelector('.auth-status') as HTMLElement;
+    this.forgotButton = this.root.querySelector('.auth-forgot') as HTMLButtonElement;
+    this.forgotButton.addEventListener('click', () => void this.handleForgot());
     this.nameInput.maxLength = NAME_MAX_CHARS * 2; // code points are checked on submit
 
     this.root.querySelector('.close-hit')?.addEventListener('click', () => this.close());
@@ -102,7 +106,12 @@ export class AuthModal {
     this.form.reset();
     this.setMode(mode);
     this.root.classList.add('visible');
-    events.emit('webgl_character_controls_enable', false);
+    // Without a Firebase config (.env) accounts cannot work: say so up front.
+    this.submit.disabled = !isLoginAvailable();
+    if (!isLoginAvailable()) this.say('Máy chủ chưa bật tài khoản (thiếu cấu hình Firebase).');
+    // Same scene treatment as the info (i) modal (washed-out scene, quieter
+    // audio, no controls, nav hidden); may sit over a nav panel modal.
+    setOverlay('auth', true);
     (this.mode === 'register' ? this.nameInput : this.emailInput).focus();
   }
 
@@ -112,7 +121,7 @@ export class AuthModal {
     this.passwordInput.value = '';
     this.confirmInput.value = '';
     this.onDone = null;
-    events.emit('webgl_character_controls_enable', true);
+    setOverlay('auth', false);
   }
 
   private setMode(mode: Mode) {
@@ -124,6 +133,7 @@ export class AuthModal {
     this.switchButton.textContent = register ? 'Đăng nhập' : 'Đăng ký';
     this.nameRow.hidden = !register;
     this.confirmRow.hidden = !register;
+    this.forgotButton.hidden = register;
     this.passwordInput.autocomplete = register ? 'new-password' : 'current-password';
     this.say('');
     if (this.isOpen) (register ? this.nameInput : this.emailInput).focus();
@@ -170,6 +180,27 @@ export class AuthModal {
     } finally {
       this.busy = false;
       this.submit.disabled = false;
+    }
+  }
+
+  /** "Quên mật khẩu?": email a reset link to the address typed above. */
+  private async handleForgot() {
+    if (this.busy || !isLoginAvailable()) return;
+    const email = this.emailInput.value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return this.fail('Nhập email của tài khoản ở trên rồi bấm "Quên mật khẩu?".', this.emailInput);
+    this.busy = true;
+    this.forgotButton.disabled = true;
+    this.say('Đang gửi thư…');
+    try {
+      await resetPassword(email);
+      // Same answer whether or not the email has an account.
+      this.say(`Nếu ${email} có tài khoản, thư đặt lại mật khẩu đã được gửi. Kiểm tra cả mục thư rác nhé.`);
+    } catch (err) {
+      console.warn('[auth] password reset failed', err);
+      this.say(authErrorMessage(err));
+    } finally {
+      this.busy = false;
+      this.forgotButton.disabled = false;
     }
   }
 

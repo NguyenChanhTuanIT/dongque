@@ -4,7 +4,7 @@
 
 import data from '../../shared/shop-catalog.json';
 
-export type CategoryId = 'outfit' | 'shoes' | 'accessory' | 'picnic';
+export type CategoryId = 'outfit' | 'shoes' | 'accessory' | 'picnic' | 'pet' | 'hobby' | 'farm';
 export type SlotId = 'hat' | 'hair' | 'top' | 'bottom' | 'shoes' | 'glasses' | 'necklace';
 
 export interface CatalogItem {

@@ -15,6 +15,24 @@ export interface LivePlayer {
   z: number;
 }
 
+export type FeedbackStatus = 'new' | 'read' | 'done';
+
+/** Product feedback sent from the game (server/feedback.mjs). */
+export interface FeedbackItem {
+  id: string;
+  text: string;
+  /** ms since epoch */
+  at: number;
+  day: string;
+  /** Firebase uid ('' = guest). */
+  uid: string;
+  ua: string;
+  status: FeedbackStatus;
+  note: string;
+  updatedAt?: number;
+  updatedBy?: string;
+}
+
 export interface Health {
   players: number;
   rooms: Record<string, number>;
@@ -65,6 +83,10 @@ export function createAdminApi(base: () => string, token: () => Promise<string>)
       call<{ kicked: number }>('/kick', { method: 'POST', body: JSON.stringify(target) }).then((r) => r.kicked),
     ban: (uid: string, banned: boolean) =>
       call<{ kicked: number }>('/ban', { method: 'POST', body: JSON.stringify({ uid, banned }) }).then((r) => r.kicked),
+    feedback: (signal?: AbortSignal) => call<{ items: FeedbackItem[] }>('/feedback', { signal }).then((r) => r.items),
+    updateFeedback: (id: string, patch: { status?: FeedbackStatus; note?: string }) =>
+      call<{ item: FeedbackItem }>('/feedback/update', { method: 'POST', body: JSON.stringify({ id, ...patch }) }).then((r) => r.item),
+    deleteFeedback: (id: string) => call<{ ok: true }>('/feedback/delete', { method: 'POST', body: JSON.stringify({ id }) }),
   };
 }
 

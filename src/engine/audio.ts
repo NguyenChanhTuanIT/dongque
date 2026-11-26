@@ -61,19 +61,26 @@ export class AudioController {
     events.on('webgl_audio_play_sound', this.playSound);
     events.on('webgl_audio_overlay_volume', this.overlayVolume);
 
+    // Ambience and effects after the scene; the song (the largest file, 2 MB)
+    // only once the player interacts, since nothing can play before that anyway.
     scene.uploaded.then(async () => {
-      try { const buffers = await Promise.all(this._files.map(async (f) => { const res = await fetch(f.url); if (!res.ok) throw new Error('audio preload failed'); return res.arrayBuffer(); })); this._filesBuffers = buffers; } catch (error) { console.warn('Audio preload failed', error); this._filesBuffers = []; }
+      try { const buffers = await Promise.all(this._files.map(async (f) => { if (f.name === 'song') return null; const res = await fetch(f.url); if (!res.ok) throw new Error('audio preload failed'); return res.arrayBuffer(); })); this._filesBuffers = buffers as ArrayBuffer[]; } catch (error) { console.warn('Audio preload failed', error); this._filesBuffers = []; }
       this._filesPreloaded.resolve();
     });
 
-    // start on first user interaction (autoplay policy)
-    const start = () => this._start();
+    // Start on the first user interaction (autoplay policy). The unlock
+    // listeners stay until that interaction actually happens: removing them
+    // when canPlaySound resolves (1.5s into the intro) left players who had not
+    // clicked yet with no AudioContext at all, so the sound button did nothing.
+    const start = () => {
+      removeUnlock();
+      void this._start();
+    };
     (engine as any).touchController?.allowClickEvents(true);
     const removeUnlock = () => { document.body.removeEventListener('click', start); events.off('touch_end', start); events.off('keydown', start); (engine as any).touchController?.allowClickEvents(false); };
     document.body.addEventListener('click', start);
     events.on('touch_end', start);
     events.on('keydown', start);
-    this.canPlaySound.then(removeUnlock);
   }
 
   private async _start() {
@@ -100,6 +107,16 @@ export class AudioController {
 
   private async _createAudios() {
     await this._filesPreloaded;
+    // The song is fetched now (first interaction), see the constructor.
+    const songIndex = this._files.findIndex((f) => f.name === 'song');
+    if (songIndex >= 0 && !this._filesBuffers[songIndex] && this._filesBuffers.length) {
+      try {
+        const res = await fetch(this._files[songIndex].url);
+        if (res.ok) this._filesBuffers[songIndex] = await res.arrayBuffer();
+      } catch (error) {
+        console.warn('Song download failed', error);
+      }
+    }
     const jobs = this._files.map((file, index) => new Promise<void>((resolve) => { const buffer = this._filesBuffers[index]; if (!buffer) { resolve(); return; } this._listener!.context.decodeAudioData(buffer.slice(0), (decoded) => { const audio = new LoopAudio(this._listener!); this._audios[file.name] = audio; audio.setBuffer(decoded); audio.setLoop(true); audio.setVolume(0); audio.play(); resolve(); }, () => resolve()); }));
     await Promise.all(jobs);
   }

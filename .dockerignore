@@ -1,6 +1,0 @@
-node_modules
-dist
-.git
-screenshots
-*.log
-# .env is intentionally NOT ignored: Vite needs the public Firebase web config at build time.

@@ -16,6 +16,7 @@
 
     #ifdef IS_CHARACTER
         varying float vSeed;
+        varying float vBindY;
         #ifdef CHAR_VERTEX_COLOR
             varying vec3 vCharColor;
         #endif
@@ -52,7 +53,8 @@
                 if (i < 6.5) return vec3(0.42, 0.29, 0.20);  // 6 brown
                 if (i < 7.5) return vec3(0.97, 0.89, 0.78);  // 7 cream
                 if (i < 8.5) return vec3(1.00, 0.55, 0.69);  // 8 flower pink
-                return vec3(1.00, 0.82, 0.37);               // 9 flower yellow
+                if (i < 9.5) return vec3(1.00, 0.82, 0.37);  // 9 flower yellow
+                return vec3(0.80, 0.69, 0.50);               // 10 khaki (shorts)
             }
         #endif
     #endif
@@ -256,6 +258,13 @@
                         // skin
                         float rampY = getRamp(79.0 + clamp(floor(vSeed), 0.0, 3.0));
                         diffuseSpecular = texture2D(tRamp, vec2(rampX, rampY)).rgb;
+                    } else if (vColorInfo.y > 3.5) {
+                        // striped shop top: palette colour / white bands, 4.5 cm each
+                        float stripe = mod(floor(vBindY / 0.045), 2.0);
+                        vec3 pc = stripe < 0.5 ? charPalette(vColorInfo.x) : charPalette(3.0);
+                        vec3 pcShade = pc * vec3(0.58, 0.6, 0.72);
+                        float band = floor(rampX * 2.99);
+                        diffuseSpecular = band < 0.5 ? pcShade : (band < 1.5 ? mix(pcShade, pc, 0.6) : pc);
                     } else if (vColorInfo.y > 2.5) {
                         // shop item palette: three toon bands, shadows slightly cool
                         vec3 pc = charPalette(vColorInfo.x);

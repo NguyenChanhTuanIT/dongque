@@ -13,6 +13,12 @@
 // Shop (server/shop.mjs): buy() spends flowers on an item for good (`owned`);
 // the account's equipped outfit (`outfit`, slot id → item id) is kept here too,
 // so it follows the account to any device.
+//
+// Guests (players who are not signed in) get a wallet too, keyed
+// "guest:<key>" where the key is a random secret their browser tab keeps in
+// sessionStorage. Guest wallets live in memory only (never saved, dropped after
+// GUEST_IDLE_MS without a session): closing the tab loses them. Registering
+// moves the guest wallet into the new account (adopt()).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,6 +35,12 @@ const SAVE_DELAY_MS = 3_000;
 const KEEP_CHECKINS = 14;
 const KEEP_PURCHASES = 50;
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+/** Guest wallets unused this long are forgotten. */
+const GUEST_IDLE_MS = 6 * 60 * 60 * 1000;
+/** At most this many guest wallets in memory (the least recently used go first, never online ones). */
+const MAX_GUESTS = 20_000;
+export const GUEST_PREFIX = 'guest:';
+const isGuestId = (id) => id.startsWith(GUEST_PREFIX);
 
 /**
  * @typedef {object} Wallet
@@ -60,6 +72,9 @@ export function createWallets({ file, timeZone = 'Asia/Ho_Chi_Minh', log = (msg)
   } catch (err) {
     if (/** @type {NodeJS.ErrnoException} */ (err).code !== 'ENOENT') log(`could not read ${file}: ${err}`);
   }
+  /** Guest wallets (memory only), id → wallet; `seen` = last use. */
+  /** @type {Map<string, Wallet & { seen: number }>} */
+  const guests = new Map();
   /** uid → time online time was last credited (accounts online right now). */
   const lastAccrual = new Map();
   /** @type {NodeJS.Timeout | null} */
@@ -95,10 +110,35 @@ export function createWallets({ file, timeZone = 'Asia/Ho_Chi_Minh', log = (msg)
     }
   }
 
-  /** The wallet of `uid`, its daily fields reset when the day changed. */
+  const emptyWallet = () => ({ flowers: 0, earned: 0, day: '', onlineMs: 0, stage: 0, stageMs: 0, checkins: [], owned: [], spent: 0, purchases: [], outfit: null });
+  /** Saved wallet or guest wallet, without creating one. */
+  const peek = (id) => (isGuestId(id) ? guests.get(id) : wallets[id]);
+
+  /** The wallet of `uid` (account uid or guest id), its daily fields reset when the day changed. */
   function wallet(uid, now) {
-    let w = wallets[uid];
-    if (!w) w = wallets[uid] = { flowers: 0, earned: 0, day: '', onlineMs: 0, stage: 0, stageMs: 0, checkins: [], owned: [], spent: 0, purchases: [], outfit: null };
+    let w;
+    if (isGuestId(uid)) {
+      w = guests.get(uid);
+      if (w) {
+        guests.delete(uid); // re-insert: the Map stays in least-recently-used order
+      } else {
+        if (guests.size >= MAX_GUESTS) {
+          // Make room: the least recently used wallet without a live session.
+          for (const id of guests.keys()) {
+            if (!lastAccrual.has(id)) {
+              guests.delete(id);
+              break;
+            }
+          }
+        }
+        w = { ...emptyWallet(), seen: now };
+      }
+      guests.set(uid, w);
+      w.seen = now;
+    } else {
+      w = wallets[uid];
+      if (!w) w = wallets[uid] = emptyWallet();
+    }
     if (!Array.isArray(w.owned)) {
       // Saved before the shop.
       w.owned = [];
@@ -188,7 +228,21 @@ export function createWallets({ file, timeZone = 'Asia/Ho_Chi_Minh', log = (msg)
 
     /** Whether the account bought `id` (no wallet is created for the check). */
     owns(uid, id) {
-      return !!uid && !!wallets[uid]?.owned?.includes(id);
+      return !!uid && !!peek(uid)?.owned?.includes(id);
+    },
+
+    /**
+     * Item `id` is gone (a fishing rod broke on a big fish): no longer owned,
+     * it can be bought again in the shop. Flowers are not given back.
+     * @returns {{ ok: true } | { ok: false, error: 'not-owned' }}
+     */
+    lose(uid, id, now = Date.now()) {
+      const w = wallet(uid, now);
+      if (!w.owned.includes(id)) return { ok: false, error: 'not-owned' };
+      w.owned = w.owned.filter((owned) => owned !== id);
+      w.purchases = [...w.purchases, { id, price: 0, at: now, lost: true }].slice(-KEEP_PURCHASES);
+      save();
+      return { ok: true };
     },
 
     /**
@@ -210,7 +264,32 @@ export function createWallets({ file, timeZone = 'Asia/Ho_Chi_Minh', log = (msg)
 
     /** The account's saved outfit (slot id → item id), or null. */
     getOutfit(uid) {
-      return wallets[uid]?.outfit ?? null;
+      return peek(uid)?.outfit ?? null;
+    },
+
+    /**
+     * Registering after playing as a guest: move guest wallet `guestId` into
+     * account `uid` when that account has no progress yet (a new account).
+     * Returns 'adopted', 'skipped' (the account already has progress: the guest
+     * wallet stays with the tab) or '' (nothing to move).
+     */
+    adopt(uid, guestId, now = Date.now()) {
+      const g = guests.get(guestId);
+      if (!g || (!g.earned && !g.owned.length && !g.checkins.length)) return '';
+      const mine = wallets[uid];
+      if (mine && (mine.earned || mine.owned.length || mine.checkins.length)) return 'skipped';
+      const { seen, ...moved } = g;
+      wallets[uid] = moved;
+      guests.delete(guestId);
+      wallet(uid, now); // normalise the day fields
+      save();
+      log(`guest wallet moved to ${uid} (${moved.flowers} flowers, ${moved.owned.length} items)`);
+      return 'adopted';
+    },
+
+    /** Forget guest wallets nobody used for a while (and not online now). */
+    sweepGuests(now = Date.now()) {
+      for (const [id, w] of guests) if (now - w.seen > GUEST_IDLE_MS && !lastAccrual.has(id)) guests.delete(id);
     },
 
     setOutfit(uid, outfit, now = Date.now()) {

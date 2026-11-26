@@ -25,7 +25,14 @@ export function watchConfig(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
+let fromServer = false;
+/** Whether the active config came from Firestore (false: built-in defaults so far). */
+export function isConfigFromServer(): boolean {
+  return fromServer;
+}
+
 function apply(data: unknown) {
+  fromServer = true;
   current = mergeWithDefaults(DEFAULT_CONFIG, data);
   for (const listener of listeners) {
     try {

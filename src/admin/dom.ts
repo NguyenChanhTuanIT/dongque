@@ -18,14 +18,14 @@ export interface DialogOptions {
   confirmLabel: string;
   danger?: boolean;
   /** Adds a text field; its value is what the promise resolves to. */
-  input?: { label: string; placeholder?: string; maxLength?: number };
+  input?: { label: string; placeholder?: string; maxLength?: number; value?: string };
 }
 
 /** Modal confirm (optionally with a text field). Resolves to the text ('' without a field), or null if cancelled. */
 export function askDialog(options: DialogOptions): Promise<string | null> {
   return new Promise((resolve) => {
     const field = options.input
-      ? el('input', { type: 'text', placeholder: options.input.placeholder ?? '', maxLength: options.input.maxLength ?? 200 })
+      ? el('input', { type: 'text', placeholder: options.input.placeholder ?? '', maxLength: options.input.maxLength ?? 200, value: options.input.value ?? '' })
       : null;
     const cancel = el('button', { type: 'button', textContent: 'Huỷ' });
     const confirm = el('button', { type: 'submit', className: options.danger ? 'danger-solid' : 'primary', textContent: options.confirmLabel });

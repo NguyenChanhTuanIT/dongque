@@ -50,6 +50,14 @@ export interface SceneConfig {
       kiteFlyers: boolean;
       /** A kid playing guitar and singing at the far end of the road. */
       guitarist: boolean;
+      /** A kid fishing at the end of the pier (bites, fights, catches like players). */
+      fisher: boolean;
+      /** A kid feeding the hens at the first chicken coop (the hens come running). */
+      henFeeder: boolean;
+      /** A kid carrying water on a shoulder pole between the well and the coop. */
+      waterCarrier: boolean;
+      /** Two kids running after butterflies with nets on the butterfly meadow by the beach. */
+      butterflyKids: boolean;
     };
     modules: Record<ToggleableModule, boolean>;
   };
@@ -95,22 +103,24 @@ export interface ShopItemConfig {
 
 export const DEFAULT_CONFIG: SceneConfig = {
   ui: {
-    loaderTitle: 'Summer\nAfternoon',
-    aboutTitle: 'SummerTime',
+    loaderTitle: 'Một góc quê\nđể thư giãn',
+    aboutTitle: 'Một góc quê để thư giãn',
     aboutParagraphs: [
-      'This is a web experiment I made to practice some procedural 3D art. There are 5 secrets hidden across it. I hope you can find them!',
-      'Thanks to Ana and Michael for their tips.',
+      'Đây là một góc quê nhỏ trên mạng để bạn ghé chơi mỗi khi muốn sống chậm lại: đồng cỏ, rặng cây, bãi biển và những buổi chiều chẳng có gì phải vội.',
+      'Ở đây bạn gặp những người chơi khác, trò chuyện, tặng hoa, nắm tay đi dạo hay ngồi ghế đá ngắm trời. Thích làm việc tay chân thì ra chuồng gà vãi thóc, lên cầu câu ngồi chờ phao chìm, hoặc dạo cùng các bạn nhỏ đang thả diều, gánh nước.',
+      'Điểm danh mỗi ngày để nhận hoa, rồi dùng hoa đổi quần áo, cần câu hay lúa trong cửa hàng. Đâu đó vẫn còn vài bí mật nhỏ đang chờ bạn tìm ra.',
+      'Không có nhiệm vụ, không có thắng thua. Chỉ cần ghé qua, đi chậm một chút, và thấy lòng nhẹ hơn khi ra về. 🌾',
     ],
-    congratsTitle: 'You found all 5 secrets!',
+    congratsTitle: 'Bạn đã tìm ra tất cả bí mật!',
     congratsParagraphs: [
-      "(I hope that didn't take too long)",
-      "I don't have anything to give you other than my thanks for exploring this experiment, inspired by those calm summer days where life just passes by... ☀️",
+      'Mong là chuyến đi tìm ấy không quá vất vả.',
+      'Cảm ơn bạn đã kiên nhẫn ghé qua từng góc nhỏ. Không có phần thưởng nào lớn lao đâu, chỉ mong bạn mang theo chút bình yên của làng quê này về với một ngày bận rộn. 🌾',
     ],
   },
   features: {
     multiplayer: true,
     multiplayerUrl: '',
-    npcs: { seaCouple: true, kiteFlyers: true, guitarist: true },
+    npcs: { seaCouple: true, kiteFlyers: true, guitarist: true, fisher: true, henFeeder: true, waterCarrier: true, butterflyKids: true },
     modules: Object.fromEntries(TOGGLEABLE_MODULES.map((m) => [m, true])) as Record<ToggleableModule, boolean>,
   },
   player: {

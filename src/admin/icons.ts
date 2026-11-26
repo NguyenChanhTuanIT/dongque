@@ -17,6 +17,7 @@ const PATHS = {
   activity: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
   bag: '<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5 12 13l8.5-6.5"/>',
 } as const;
 
 export type IconName = keyof typeof PATHS;

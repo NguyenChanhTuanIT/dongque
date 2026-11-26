@@ -1,16 +1,16 @@
 {
-  "name": "summertime-server",
+  "name": "dongque-server",
   "private": true,
   "type": "module",
-  "description": "Multiplayer WebSocket relay + static server for SummerTime.",
+  "description": "Multiplayer WebSocket relay + static server for RelaxTime.",
   "main": "index.mjs",
   "scripts": {
     "start": "node index.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
-    "ws": "8.18.0"
+    "ws": "^8.23.0"
   }
 }

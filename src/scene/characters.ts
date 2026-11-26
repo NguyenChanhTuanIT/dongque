@@ -7,8 +7,16 @@ import { geometryLoader } from '../engine/loaders/geometries';
 import { Characters } from '../engine/characters';
 import { depthCharsMaterial, phongMaterial } from './materials';
 import { SceneModule } from './SceneModule';
-import { EMOTES, MOBILE_EMOTE_STATES, createEmoteClips } from './emotes';
+import { EMOTES, MOBILE_EMOTE_STATES, PHASED_EMOTES, SYNCED_STATES, createEmoteClips } from './emotes';
+import { Together } from './together';
+import { CountryProps } from './countryProps';
+import { BenchSeating, benchCollider, benchMeshes } from './benches';
+import { ChickenCoops, coopColliderBoxes } from './chickenCoops';
+import { FishingPier, cutShoreWall, pierColliderBoxes } from './fishingPier';
+import { cutRemovedMachines } from './structures';
+import { FishingGame } from './fishingGame';
 import { FishingGear } from './fishing';
+import { Butterflies } from './butterflies';
 import { GuitarProp } from './guitar';
 import { HandProps } from './props';
 import { Pets } from './pets';
@@ -18,7 +26,7 @@ import { DEFAULT_OUTFIT, outfitMask, sanitizeOutfit, type Outfit } from './appea
 import { loadCharacterBody } from './characterModel';
 import { canUseEmote } from '../shop/inventory';
 
-const OUTFIT_STORAGE_KEY = 'summertime.outfit';
+const OUTFIT_STORAGE_KEY = 'dongque.outfit';
 
 function loadOutfit(): Outfit {
   try {
@@ -26,6 +34,18 @@ function loadOutfit(): Outfit {
     return raw ? sanitizeOutfit(JSON.parse(raw)) : [...DEFAULT_OUTFIT];
   } catch {
     return [...DEFAULT_OUTFIT];
+  }
+}
+
+/** Colour seed = skin tone (0–3, integer part) + clothes hue (fraction). */
+const COLOR_STORAGE_KEY = 'dongque.color';
+
+function loadColorSeed(): number | null {
+  try {
+    const value = Number(localStorage.getItem(COLOR_STORAGE_KEY) ?? NaN);
+    return Number.isFinite(value) && value >= 0 && value < 4 ? value : null;
+  } catch {
+    return null;
   }
 }
 import { getConfig, watchConfig } from '../config/store';
@@ -44,6 +64,9 @@ export class CharactersModule extends SceneModule {
     const npcStart = walkingStart + emotes.moving.length;
     clips.push(...emotes.clips, ...emotes.moving.map((m) => m.clip), ...emotes.npc.map((n) => n.clip));
     const fishingGear = new FishingGear();
+    // Butterflies + the butterfly net; the free ones fly on the shared clock.
+    const butterflies = new Butterflies(() => (this.mesh ? this.mesh.sharedTime() : Date.now() / 1000));
+    this.scene.add(butterflies.group);
     this.scene.add(fishingGear.group);
     const guitar = new GuitarProp();
     this.scene.add(guitar.group);
@@ -51,6 +74,14 @@ export class CharactersModule extends SceneModule {
     this.scene.add(handProps.group);
     const pets = new Pets();
     this.scene.add(pets.group);
+    const countryProps = new CountryProps(this.scene, () => this.mesh._localObject.position);
+    this.scene.add(countryProps.group);
+    this.scene.add(benchMeshes());
+    let benches: BenchSeating | null = null;
+    let coops: ChickenCoops | null = null;
+    let pier: FishingPier | null = null;
+    let fishingGame: FishingGame | null = null;
+    let together: Together | null = null;
     let highFive: HighFive | null = null;
     let npcs: NpcManager | null = null;
 
@@ -62,12 +93,18 @@ export class CharactersModule extends SceneModule {
     skinned.geometry.setAttribute('instanceParts', new InstancedBufferAttribute(new Float32Array(128), 1));
     skinned.material = phongMaterial({ isCharacters: true, charVertexColors: body.vertexColors });
     skinned.customDepthMaterial = depthCharsMaterial();
-    this.changeColor();
+    const saved = loadColorSeed();
+    if (saved === null) this.changeColor();
+    else this.applySeed(saved);
     events.on('webgl_character_randomize_color', this.changeColor);
+    events.on('webgl_character_set_color', this.setColor);
     events.on('webgl_character_outfit', this.setOutfit);
     events.on('webgl_character_controls_enable', this.enableControls);
 
-    const colliderMesh = new Mesh(colliderGeometry);
+    // Stone benches are solid: their boxes join the walk collider.
+    // Chicken coops (hen house + fence) and the fishing pier deck too.
+    // The pier crosses the map's invisible shore wall: cut a gap there first.
+    const colliderMesh = new Mesh(benchCollider(cutRemovedMachines(cutShoreWall(colliderGeometry)), [...coopColliderBoxes(), ...pierColliderBoxes()]));
     const config = getConfig();
 
     this.mesh = new Characters(skinned, clips, {
@@ -79,11 +116,16 @@ export class CharactersModule extends SceneModule {
       // Slot n (key n / menu item n) plays EMOTES[n - 1].
       emoteSlots: EMOTES.map((e) => e.state),
       emoteDurations: Object.fromEntries(EMOTES.map((e) => [e.state, e.duration])),
+      emoteKeys: EMOTES.map((e) => e.key),
+      emotePhases: PHASED_EMOTES,
+      syncedStates: SYNCED_STATES,
       onInstancePose: (character, instance, bones, stateWeight) => {
         fishingGear.pose(character, instance, bones, stateWeight);
+        butterflies.pose(character, instance, bones, stateWeight);
         guitar.pose(character, instance, bones, stateWeight);
         handProps.pose(character, instance, bones, stateWeight);
         pets.pose(character, instance, bones, stateWeight);
+        countryProps.pose(character, instance, bones, stateWeight);
       },
       colliderMesh,
       radiusPercentage: 0.2,
@@ -111,9 +153,17 @@ export class CharactersModule extends SceneModule {
       this.mesh.update();
       events.emit('webgl_characters_updated', this.scene.camera, this.mesh, headHeight);
       fishingGear.commit(this.mesh.count);
+      butterflies.update();
+      butterflies.commit(this.mesh.count);
       guitar.commit(this.mesh.count);
       handProps.commit(this.mesh.count);
       pets.commit(this.mesh.count);
+      countryProps.commit(this.mesh.count);
+      benches?.update();
+      coops?.update();
+      pier?.update();
+      fishingGame?.update();
+      together?.update();
       highFive?.update();
       npcs?.update();
       this.scene.audioController?.updatePlayerPosition(
@@ -125,6 +175,13 @@ export class CharactersModule extends SceneModule {
 
     this.scene.add(this.mesh);
     highFive = new HighFive(this.scene, this.mesh);
+    benches = new BenchSeating(this.mesh);
+    coops = new ChickenCoops(this.mesh);
+    this.scene.add(coops.group);
+    pier = new FishingPier(this.mesh);
+    fishingGame = new FishingGame(this.mesh, this.scene.audioController);
+    this.scene.add(pier.group);
+    together = new Together(this.scene, this.mesh);
     npcs = new NpcManager(this.scene, this.mesh, this.scene.audioController);
     watchConfig(({ features }) => npcs?.configure(features.npcs));
     this.scene.add(this.mesh._controls.circles);
@@ -168,14 +225,31 @@ export class CharactersModule extends SceneModule {
     events.emit('webgl_character_update_outfit', this.outfit);
   };
 
+  /** Random skin tone (integer part) + clothes hue (fraction), away from the current hue. */
   changeColor = () => {
     const color = Math.floor(Math.random() * 4);
     const seed = this.seed % 1;
     let hue = Math.random();
     while (Math.abs(hue - seed) < 0.2) hue = Math.random();
-    this.seed = color + hue;
-    if (this.mesh) this.mesh._localObject.userData.seed = this.seed;
-    const c = new Color().setHSL(hue, 0.4, 0.3);
-    events.emit('webgl_character_update_color', `#${c.getHexString()}`);
+    this.applySeed(color + hue);
   };
+
+  /** Clothes hue picked from the palette (character panel); the skin tone stays. */
+  setColor = (hue: number) => {
+    if (!Number.isFinite(hue)) return;
+    this.applySeed(Math.floor(this.seed) + Math.min(0.999, Math.max(0, hue)));
+  };
+
+  private applySeed(seed: number) {
+    this.seed = seed;
+    if (this.mesh) this.mesh._localObject.userData.seed = this.seed;
+    try {
+      localStorage.setItem(COLOR_STORAGE_KEY, String(this.seed));
+    } catch {
+      /* storage unavailable: keep it for this session */
+    }
+    const hue = this.seed % 1;
+    const c = new Color().setHSL(hue, 0.4, 0.3);
+    events.emit('webgl_character_update_color', `#${c.getHexString()}`, hue);
+  }
 }

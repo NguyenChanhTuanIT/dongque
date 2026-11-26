@@ -7,7 +7,9 @@
 import { events } from '../core/events';
 import { REWARD_CHECKIN, REWARD_ONLINE, REWARD_STATUS } from '../engine/multiplayer/socket';
 import { isConnected } from '../social/presence';
+import { guestWarning } from './guestNote';
 import { addPanelBar } from './panelBar';
+import { mountPanelModal } from './overlay';
 
 interface WalletStatus {
   flowers: number;
@@ -21,8 +23,10 @@ interface WalletStatus {
   stageSec: number;
   counting: boolean;
   tiers: Array<{ minutes: number; flowers: number; claimed: boolean }>;
-  /** Answer to this tab's request (shop answers carry `shop: true`, see shop.ts). */
-  result?: { action: number; ok: boolean; flowers?: number; error?: string; shop?: boolean };
+  /** Guest wallet of this tab (lost when it closes unless the player signs up). */
+  guest?: boolean;
+  /** Answer to this tab's request (shop answers carry `shop: true`, see shop.ts; sign-in sync carries `sync`). */
+  result?: { action: number; ok: boolean; flowers?: number; error?: string; shop?: boolean; sync?: string };
 }
 
 export const flowerIcon =
@@ -39,6 +43,8 @@ const flowers = (n: number) => `${n} 🌸`;
 
 export class RewardsPanel {
   private readonly panel: HTMLDivElement;
+  /** Shows / hides the centred modal card around the panel (see overlay.ts). */
+  private readonly showModal: (open: boolean) => void;
   /** Rebuilt on render; the title bar above it stays. */
   private readonly content: HTMLDivElement;
   private readonly badge: HTMLSpanElement;
@@ -49,8 +55,8 @@ export class RewardsPanel {
   private toast = { text: '', until: 0 };
   private html = '';
 
-  /** `openLogin` shows the sign-in dialog. */
-  constructor(nav: HTMLElement, private readonly button: HTMLButtonElement, openLogin: () => void) {
+  /** `openAuth` shows the sign-in dialog (login or sign-up tab). */
+  constructor(nav: HTMLElement, private readonly button: HTMLButtonElement, openAuth: (mode: 'login' | 'register') => void) {
     this.badge = document.createElement('span');
     this.badge.className = 'badge';
     this.badge.hidden = true;
@@ -60,7 +66,7 @@ export class RewardsPanel {
     this.panel.className = 'look-menu rewards-menu';
     this.panel.setAttribute('role', 'dialog');
     this.panel.setAttribute('aria-label', 'Quà mỗi ngày');
-    nav.append(this.panel);
+    this.showModal = mountPanelModal(this.panel, nav.parentElement ?? nav);
     this.content = addPanelBar(this.panel, 'Quà mỗi ngày', () => this.setOpen(false));
 
     button.setAttribute('aria-haspopup', 'dialog');
@@ -72,9 +78,10 @@ export class RewardsPanel {
       if (e.code === 'Escape') this.setOpen(false);
     });
     this.panel.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('button[data-login]')) {
+      const auth = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-login], button[data-register]');
+      if (auth) {
         this.setOpen(false);
-        openLogin();
+        openAuth(auth.dataset.register !== undefined ? 'register' : 'login');
         return;
       }
       const action = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]')?.dataset.action;
@@ -84,7 +91,7 @@ export class RewardsPanel {
     events.on('mp_wallet', (wallet: WalletStatus | null) => {
       this.wallet = wallet;
       this.receivedAt = performance.now();
-      if (wallet?.result && !wallet.result.shop) this.showResult(wallet.result);
+      if (wallet?.result && !wallet.result.shop && !wallet.result.sync) this.showResult(wallet.result);
       this.render();
     });
     events.on('mp_connected', () => this.render());
@@ -97,6 +104,7 @@ export class RewardsPanel {
 
   private setOpen(open: boolean) {
     this.panel.classList.toggle('open', open);
+    this.showModal(open);
     this.button.setAttribute('aria-expanded', String(open));
     window.clearInterval(this.timer);
     if (open) {
@@ -160,10 +168,11 @@ export class RewardsPanel {
       current = `
         <div class="rewards-progress" role="progressbar" aria-valuemin="0" aria-valuemax="${tier.minutes}" aria-valuenow="${Math.min(tier.minutes, done)}"><div style="width:${Math.min(100, Math.floor((sec / goal) * 100))}%"></div></div>
         <ul class="rewards-tiers"><li><span>Mốc ${w.stage + 1}/${w.tiers.length}: ${Math.min(done, tier.minutes)}/${tier.minutes} phút</span>${action}</li></ul>
-        <p class="rewards-note">${ready ? 'Nhận quà để bắt đầu mốc tiếp theo.' : 'Chỉ tính giờ khi game đang mở trên màn hình.'}</p>`;
+        <p class="rewards-note">${ready ? 'Nhận quà để bắt đầu mốc tiếp theo.' : ''}</p>`;
     }
     const toast = performance.now() < this.toast.until ? this.toast.text : '';
     return `
+      ${w.guest ? guestWarning() : ''}
       <div class="look-group"><span>Hoa của bạn</span><b class="rewards-balance">${flowers(w.flowers)}</b></div>
       <div class="look-group">
         <span>Điểm danh hằng ngày (T7, CN được gấp đôi)</span>

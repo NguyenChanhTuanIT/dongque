@@ -111,6 +111,12 @@ export interface CharacterOptions {
   multiplayerUrl?: string;
   /** Emote slots (keys 1..n / menu): animation state `a` per slot (clip index - 1). */
   emoteSlots?: number[];
+  /** Keyboard key label per emote slot ('V', '0'…), same order as emoteSlots. */
+  emoteKeys?: readonly string[];
+  /** Emotes that play from their start (state → clip period in seconds). */
+  emotePhases?: Record<number, number>;
+  /** States whose clip phase follows the room's shared clock (partners stay in step). */
+  syncedStates?: number[];
   /** Seconds before an emote state stops by itself (absent / 0 = until moving). */
   emoteDurations?: Record<number, number>;
   /** 'While walking' clips: emote state → clip index (upper body + run legs). */
@@ -230,7 +236,9 @@ export class CharacterSkinnedMesh extends InstancedMesh {
     for (let i = 2; i < weights.length; i++) {
       const state = this.clipStates[i] ?? i - 1;
       let target = 0;
-      if (local.userData.a === state) {
+      // userData.pose: a local-only display pose (e.g. arm around a partner)
+      // that replaces the networked state `a` for this character's animation.
+      if ((local.userData.pose ?? local.userData.a) === state) {
         if (!this.walkingClips.has(state)) target = 1;
         else target = this.walkingClips.get(state) === i ? moving : 1 - moving;
       }
@@ -308,7 +316,22 @@ export class Characters extends CharacterSkinnedMesh {
   emoteAllowed: (state: number) => boolean = () => true;
   private _emoteDurations: Record<number, number> = {};
   private _emoteUntil = 0;
+  private _emotePhases: Record<number, number> = {};
   private _mobileEmotes = new Set<number>();
+  /**
+   * Fixed spot the local player is sitting / lying on (a bench): physics is
+   * paused there; moving, jumping or another emote stands up at `stand`.
+   */
+  private _seat: { position: Vector3; theta: number; state: number; stand: Vector3 } | null = null;
+  /** Emote hooks: one returning true takes over the start / stop of `state` (benches, playing together). */
+  emoteInterceptors: Array<(state: number) => boolean> = [];
+  private _syncedStates = new Set<number>();
+  /**
+   * Walk to a moving spot (hand in hand: the follower), set every frame by the
+   * caller. Movement input or a jump ends it and calls onDriveBreak.
+   */
+  private _drive: { target: Vector3; theta: number } | null = null;
+  onDriveBreak: (() => void) | null = null;
   private _onInstancePose: CharacterOptions['onInstancePose'];
   private _outfit = new Uint8Array(0);
   private _profile: Profile | null = null;
@@ -358,6 +381,9 @@ export class Characters extends CharacterSkinnedMesh {
       mouseToggleCb: (active) => events.emit('webgl_mouse_toggle', active),
     });
     this._emoteSlots = options.emoteSlots ?? [2];
+    if (options.emoteKeys) this._controls.setEmoteKeys(options.emoteKeys);
+    this._emotePhases = options.emotePhases ?? {};
+    this._syncedStates = new Set(options.syncedStates ?? []);
     this._mobileEmotes = new Set(options.mobileEmotes ?? []);
     for (const { state, clip } of options.walkingEmoteClips ?? []) {
       this.walkingClips.set(state, clip);
@@ -370,7 +396,9 @@ export class Characters extends CharacterSkinnedMesh {
     events.on('mp_send_chat', this._sendChat);
     events.on('mp_reward', this._sendReward);
     events.on('mp_shop_buy', this._sendShop);
+    events.on('mp_item_broke', this._sendBreak);
     events.on('mp_profile', this._setProfile);
+    events.on('mp_social_send', this._sendSocial);
     this._collisionPhysics = new CollisionPhysics(this as unknown as CharacterInstance, {
       colliderMesh: options.colliderMesh,
       radiusPercentage: options.radiusPercentage,
@@ -412,6 +440,7 @@ export class Characters extends CharacterSkinnedMesh {
             onWallet: (wallet) => events.emit('mp_wallet', wallet),
             onOwnOutfit: (outfit) => events.emit('mp_own_outfit', outfit),
             onKicked: (code) => events.emit('mp_kicked', code),
+            onSocial: (kind, id, activity) => events.emit('mp_social', kind, charId(id), activity),
           });
         });
       },
@@ -428,7 +457,17 @@ export class Characters extends CharacterSkinnedMesh {
     const remoteDamp = frictionFPS(this._remoteCharDamp);
 
     const move = this._controls.update();
-    this._collisionPhysics.update(move, rotationLerp);
+    const seat = this._seat;
+    if (seat && (move.lengthSq() > 1e-8 || this._localObject.jumpRequested || this._localObject.userData.a !== seat.state)) {
+      this.leaveSeat();
+    }
+    if (this._drive && (move.lengthSq() > 1e-8 || this._localObject.jumpRequested)) {
+      this._drive = null;
+      this.onDriveBreak?.();
+    }
+    if (this._seat) this._holdSeat(this._seat);
+    else if (this._drive) this._applyDrive(this._drive);
+    else this._collisionPhysics.update(move, rotationLerp);
     this._localObject.updateMatrixWorld();
     this._localObject.userData.sprint = this._controls.sprinting;
 
@@ -515,6 +554,7 @@ export class Characters extends CharacterSkinnedMesh {
         : true;
       this._collisionPhysics.boundingSphere.center.copy(this._collisionPhysics.boundingSphereOriginalCenter);
       this._customAttribUpdate?.(remote, id, instance, visible, animLerp);
+      if (this._syncedStates.has(remote.userData.a)) remote.animationOffset = this.sharedTime() - ticker.time;
       remote.updateMatrix();
       this.setMatrixAt(instance++, remote.matrix);
       this._updateAnimations(remote, animLerp);
@@ -546,16 +586,75 @@ export class Characters extends CharacterSkinnedMesh {
     this._removeCharacter(NPC_PREFIX + id);
   }
 
+  // Send first, then report: `done?.(send())` would skip the send itself when
+  // no callback is given (optional call short-circuits its arguments).
   private _sendReward = (action: number, done?: (sent: boolean) => void) => {
-    done?.(this._connection?.sendReward?.(action) ?? false);
+    const sent = this._connection?.sendReward?.(action) ?? false;
+    done?.(sent);
   };
 
   private _sendShop = (item: string, price: number, done?: (sent: boolean) => void) => {
-    done?.(this._connection?.sendShop?.(item, price) ?? false);
+    const sent = this._connection?.sendShop?.(item, price) ?? false;
+    done?.(sent);
   };
 
+  private _sendBreak = (item: string, done?: (sent: boolean) => void) => {
+    const sent = this._connection?.sendBreak?.(item) ?? false;
+    done?.(sent);
+  };
+
+  private _sendSocial = (kind: number, id: string, activity: number, done?: (sent: boolean) => void) => {
+    // Send first: `done?.(send())` would skip the send when no callback is given.
+    const sent = this._connection?.sendSocial?.(kind, id, activity) ?? false;
+    done?.(sent);
+  };
+
+  /** Our relay id ('' while offline). */
+  get selfId(): string {
+    return this._connection?.selfId ?? '';
+  }
+
+  /** Seconds on the room's shared clock (the relay's; local time while offline). */
+  sharedTime(): number {
+    const ms = this._connection?.sharedNowMs?.() ?? null;
+    return (ms ?? Date.now()) / 1000;
+  }
+
+  /** Walk toward `target` this frame, facing world direction (faceX, faceZ); null = stop. */
+  setDrive(target: Vector3 | null, faceX = 0, faceZ = 1) {
+    if (!target) {
+      this._drive = null;
+      return;
+    }
+    const theta = Math.atan2(-faceX, -faceZ);
+    if (this._drive) {
+      this._drive.target.copy(target);
+      this._drive.theta = theta;
+    } else this._drive = { target: target.clone(), theta };
+  }
+
+  get driving() {
+    return this._drive !== null;
+  }
+
+  private _applyDrive(drive: { target: Vector3; theta: number }) {
+    const local = this._localObject;
+    const before = this._v2.copy(local.position);
+    local.position.lerp(drive.target, Math.min(1, 0.3 * ratioFPS()));
+    // Velocity per 60 fps frame, as the physics measures it (walk / run blend).
+    local.velocity.subVectors(local.position, before).divideScalar(Math.max(0.2, ratioFPS()));
+    local.velocityHorizontal = Math.hypot(local.velocity.x, local.velocity.z);
+    local.acceleration.setScalar(0);
+    local.jumpRequested = false;
+    local.isOnFloor = true;
+    local.spherical.theta = local.targetSpherical.theta = drive.theta;
+    quaternionFromSpherical(local.spherical, local.quaternion);
+    this._collisionPhysics.isMoving = false;
+  }
+
   private _sendChat = (text: string, done?: (sent: boolean) => void) => {
-    done?.(this._connection?.sendChat?.(text) ?? false);
+    const sent = this._connection?.sendChat?.(text) ?? false;
+    done?.(sent);
   };
 
   /** Account-verified display name, re-claimed on every reconnect; null = guest. */
@@ -639,6 +738,56 @@ export class Characters extends CharacterSkinnedMesh {
     this.snap(this._localObject.initialPosition.toArray());
   }
 
+  /** The local player character. */
+  get local(): CharacterLocal {
+    return this._localObject;
+  }
+
+  /** Whether the local player sits / lies on a fixed spot (seatAt). */
+  get seated() {
+    return this._seat !== null;
+  }
+
+  /**
+   * Put the local player on a fixed spot in pose `state`, facing the world
+   * direction (faceX, faceZ). Physics pauses until the player moves, jumps or
+   * starts something else; then the character stands at `stand`.
+   */
+  seatAt(position: Vector3, faceX: number, faceZ: number, state: number, stand: Vector3) {
+    const local = this._localObject;
+    this._drive = null;
+    const theta = Math.atan2(-faceX, -faceZ); // the kid faces -(sin θ, cos θ)
+    this._seat = { position: position.clone(), theta, state, stand: stand.clone() };
+    local.userData.a = state;
+    local.jumpRequested = false;
+    this._emoteUntil = 0;
+    this._inactiveMilliseconds = 0;
+    this._holdSeat(this._seat);
+  }
+
+  /** Stand up from the current seat (no-op when not seated). */
+  leaveSeat() {
+    const seat = this._seat;
+    if (!seat) return;
+    this._seat = null;
+    const local = this._localObject;
+    if (local.userData.a === seat.state) local.userData.a = 0;
+    this.snap(seat.stand.toArray());
+    local.isOnFloor = true;
+  }
+
+  private _holdSeat(seat: { position: Vector3; theta: number }) {
+    const local = this._localObject;
+    local.position.copy(seat.position);
+    local.velocity.setScalar(0);
+    local.acceleration.setScalar(0);
+    local.velocityHorizontal = 0;
+    local.jumpRequested = false;
+    local.spherical.theta = local.targetSpherical.theta = seat.theta;
+    quaternionFromSpherical(local.spherical, local.quaternion);
+    this._collisionPhysics.isMoving = false;
+  }
+
   /** Keys 1..n / E / Y / emote menu: start the emote in `slot` (1-based), or
    *  stop it when it is already playing. Only while grounded. */
   private _toggleEmote = (slot = 1) => {
@@ -646,6 +795,7 @@ export class Characters extends CharacterSkinnedMesh {
     if (!this._collisionPhysics.collider) return;
     const state = this._emoteSlots[slot - 1];
     if (state === undefined) return;
+    if (this.emoteInterceptors.some((intercept) => intercept(state))) return;
     if (local.userData.a !== state && !this.emoteAllowed(state)) {
       events.emit('webgl_emote_locked', state);
       return;
@@ -656,7 +806,15 @@ export class Characters extends CharacterSkinnedMesh {
       this._inactiveMilliseconds = 0;
     } else if (local.userData.a === 0 || local.userData.a >= 2) {
       // a === 0 means grounded (physics sets 1 while airborne).
+      this.leaveSeat();
       local.userData.a = state;
+      this._drive = null;
+      // Play-once emotes start from the beginning of their clip.
+      const period = this._emotePhases[state];
+      if (period > 0) {
+        const t = ticker.time + local.animationOffset;
+        local.animationOffset -= ((t % period) + period) % period;
+      }
       const duration = this._emoteDurations[state] ?? 0;
       this._emoteUntil = duration > 0 ? clock.time + duration : 0;
     }

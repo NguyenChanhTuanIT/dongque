@@ -3,6 +3,9 @@
 //   GET  /admin/api/players            everyone connected (id, room, name, uid, …)
 //   POST /admin/api/kick  {id?, uid?}  disconnect a player / every session of an account
 //   POST /admin/api/ban   {uid, banned} remember a ban decision (and disconnect when banning)
+//   GET  /admin/api/feedback                     product feedback, newest first (server/feedback.mjs)
+//   POST /admin/api/feedback/update {id, status?, note?}  mark new / read / done, private note
+//   POST /admin/api/feedback/delete {id}
 //
 // Callers send `Authorization: Bearer <Firebase ID token>`. The token is
 // verified locally (firebase-auth.mjs); admin rights are then checked by
@@ -11,6 +14,7 @@
 // "is an admin" and no service account is needed.
 
 import { createTokenVerifier } from './firebase-auth.mjs';
+import { FEEDBACK_STATUSES } from './feedback.mjs';
 
 const ADMIN_CACHE_MS = 60_000;
 const MAX_BODY = 4096;
@@ -24,13 +28,14 @@ const CORS = {
 /**
  * @param {object} options
  * @param {{ listPlayers: () => object[], kick: (t: { id?: number, uid?: string }) => number, setBanned: (uid: string, banned: boolean) => number }} options.realm
+ * @param {{ list: () => object[], update: (id: string, patch: { status?: string, note?: string }, by: string) => object | null, remove: (id: string) => boolean }} [options.feedback]
  * @param {string} options.projectId  Firebase project id ('' = API answers 503).
  * @param {string} [options.prefix]
  * @param {(msg: string) => void} [options.log]
  * @returns {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => boolean}
  *   true when the request was for the admin API (and has been answered).
  */
-export function createAdminApi({ realm, projectId, prefix = '/admin/api', log = (msg) => console.log(`[admin] ${msg}`) }) {
+export function createAdminApi({ realm, feedback, projectId, prefix = '/admin/api', log = (msg) => console.log(`[admin] ${msg}`) }) {
   const verify = projectId ? createTokenVerifier(projectId) : null;
   /** uid → { ok, at } */
   const adminCache = new Map();
@@ -112,6 +117,31 @@ export function createAdminApi({ realm, projectId, prefix = '/admin/api', log = 
       const kicked = realm.setBanned(body.uid, body.banned);
       log(`${uid} ${body.banned ? 'banned' : 'unbanned'} ${body.uid} (${kicked} disconnected)`);
       return send(res, 200, { kicked });
+    }
+    if (feedback && req.method === 'GET' && path === '/feedback') {
+      return send(res, 200, { items: feedback.list() });
+    }
+    if (feedback && req.method === 'POST' && path === '/feedback/update') {
+      const body = await readJson(req);
+      const patch = {};
+      if (body.status !== undefined) {
+        if (!FEEDBACK_STATUSES.includes(body.status)) return send(res, 400, { error: 'bad_request' });
+        patch.status = body.status;
+      }
+      if (body.note !== undefined) {
+        if (typeof body.note !== 'string' || body.note.length > 500) return send(res, 400, { error: 'bad_request' });
+        patch.note = body.note.trim();
+      }
+      if (typeof body.id !== 'string' || !Object.keys(patch).length) return send(res, 400, { error: 'bad_request' });
+      const item = feedback.update(body.id, patch, uid);
+      return item ? send(res, 200, { item }) : send(res, 404, { error: 'not_found' });
+    }
+    if (feedback && req.method === 'POST' && path === '/feedback/delete') {
+      const body = await readJson(req);
+      if (typeof body.id !== 'string') return send(res, 400, { error: 'bad_request' });
+      if (!feedback.remove(body.id)) return send(res, 404, { error: 'not_found' });
+      log(`${uid} deleted feedback ${body.id}`);
+      return send(res, 200, { ok: true });
     }
     send(res, 404, { error: 'not_found' });
   }

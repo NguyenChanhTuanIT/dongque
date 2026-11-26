@@ -6,6 +6,7 @@
 import { events } from '../core/events';
 import { CHAT_MAX_CHARS, CLOSE_BANNED, NOTICE_BANNED, NOTICE_CHAT_TOO_FAST } from '../engine/multiplayer/socket';
 import { displayName } from '../social/presence';
+import { announcementLine, isAnnouncement } from './announce';
 
 const MAX_LINES = 100;
 /** How long a line stays visible while the input is closed. */
@@ -51,7 +52,11 @@ export class ChatPanel {
         this.setOpen(true);
       }
     });
-    events.on('mp_chat', (id: string, text: string) => this.addLine(displayName(id), text, id === 'local' ? 'self' : ''));
+    events.on('mp_chat', (id: string, text: string) => {
+      // Fishing news: a notice line ("🎣 Tuấn câu được Cá thu 3,2 kg!"), not a message.
+      if (isAnnouncement(text)) this.addLine('', announcementLine(displayName(id), text), 'system');
+      else this.addLine(displayName(id), text, id === 'local' ? 'self' : '');
+    });
     events.on('mp_notice', (code: number) => {
       if (code === NOTICE_CHAT_TOO_FAST) this.addLine('', 'Bạn gửi hơi nhanh, chờ một chút nhé.', 'system');
       else if (code === NOTICE_BANNED) this.addLine('', 'Tài khoản này đã bị khoá, bạn đang chơi với tư cách khách.', 'system');
@@ -65,6 +70,8 @@ export class ChatPanel {
         'system',
       );
     });
+    // Short game hints (e.g. stone benches: "move closer", "bench is full").
+    events.on('game_hint', (text: string) => this.addLine('', text, 'system'));
     events.on('auth_banned', () => this.addLine('', 'Tài khoản này đã bị khoá nên đã được đăng xuất.', 'system'));
   }
 

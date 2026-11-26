@@ -4,7 +4,10 @@
     { "id": "outfit", "label": "Trang phục" },
     { "id": "shoes", "label": "Giày dép" },
     { "id": "accessory", "label": "Phụ kiện" },
-    { "id": "picnic", "label": "Đồ dã ngoại" }
+    { "id": "picnic", "label": "Đồ dã ngoại" },
+    { "id": "pet", "label": "Thú cưng" },
+    { "id": "hobby", "label": "Nhạc cụ & đồ chơi" },
+    { "id": "farm", "label": "Việc nhà & đồng áng" }
   ],
   "slots": [
     { "id": "hat", "label": "Mũ", "items": ["hat.none", "hat.straw", "hat.cap"] },
@@ -26,8 +29,8 @@
     { "id": "hair.bob", "label": "Ngang vai", "free": true },
 
     { "id": "top.tshirt", "label": "Áo phông", "free": true },
-    { "id": "top.blue", "label": "Áo xanh biển", "category": "outfit", "icon": "👕" },
-    { "id": "top.pink", "label": "Áo hồng", "category": "outfit", "icon": "👚" },
+    { "id": "top.blue", "label": "Áo sọc xanh", "category": "outfit", "icon": "👕" },
+    { "id": "top.pink", "label": "Áo sọc hồng", "category": "outfit", "icon": "👚" },
 
     { "id": "bottom.shorts", "label": "Quần short", "free": true },
     { "id": "bottom.skirt", "label": "Váy xoè", "free": true },
@@ -49,6 +52,19 @@
     { "id": "picnic.fishing", "label": "Cần câu", "category": "picnic", "icon": "🎣", "emote": 7 },
     { "id": "picnic.guitar", "label": "Đàn guitar", "category": "picnic", "icon": "🎸", "emote": 10 },
     { "id": "picnic.kite", "label": "Diều", "category": "picnic", "icon": "🪁", "emote": 11 },
-    { "id": "picnic.icecream", "label": "Kem", "category": "picnic", "icon": "🍦", "emote": 12 }
+    { "id": "picnic.icecream", "label": "Kem", "category": "picnic", "icon": "🍦", "emote": 12 },
+    { "id": "picnic.rice", "label": "Lúa", "category": "picnic", "icon": "🌾", "emote": 24 },
+
+    { "id": "pet.dog", "label": "Chó con", "category": "pet", "icon": "🐶", "emote": 14 },
+    { "id": "pet.cat", "label": "Mèo con", "category": "pet", "icon": "🐱", "emote": 15 },
+    { "id": "hobby.flute", "label": "Sáo trúc", "category": "hobby", "icon": "🎶", "emote": 19 },
+    { "id": "hobby.fan", "label": "Quạt giấy", "category": "hobby", "icon": "🪭", "emote": 20 },
+    { "id": "hobby.book", "label": "Sách truyện", "category": "hobby", "icon": "📖", "emote": 27 },
+    { "id": "hobby.jumprope", "label": "Dây nhảy", "category": "hobby", "icon": "🪢", "emote": 30 },
+    { "id": "hobby.shuttle", "label": "Quả cầu", "category": "hobby", "icon": "🪶", "emote": 31 },
+    { "id": "hobby.net", "label": "Vợt bắt bướm", "category": "hobby", "icon": "🦋", "emote": 43 },
+    { "id": "farm.wateringcan", "label": "Bình tưới", "category": "farm", "icon": "🚿", "emote": 22 },
+    { "id": "farm.broom", "label": "Chổi rơm", "category": "farm", "icon": "🧹", "emote": 25 },
+    { "id": "farm.pole", "label": "Đòn gánh", "category": "farm", "icon": "🪣", "emote": 26 }
   ]
 }

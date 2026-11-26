@@ -7,6 +7,7 @@
 
 import {
   BoxGeometry,
+  CatmullRomCurve3,
   Color,
   ConeGeometry,
   CylinderGeometry,
@@ -17,6 +18,7 @@ import {
   Quaternion,
   SphereGeometry,
   TorusGeometry,
+  TubeGeometry,
   Vector3,
   type Bone,
   type BufferGeometry,
@@ -37,96 +39,190 @@ type Kind = 'dog' | 'cat';
 
 const at = (g: BufferGeometry, x: number, y: number, z: number) => g.translate(x, y, z).toNonIndexed();
 const merge = (gs: BufferGeometry[]) => mergeBufferGeometries(gs)!;
+const ball = (r: number, sx = 1, sy = 1, sz = 1) => new SphereGeometry(r, 12, 9).scale(sx, sy, sz);
+const v = (x: number, y: number, z: number) => new Vector3(x, y, z);
+
+/**
+ * A smooth tube along a Catmull-Rom curve through `points`, tapering from
+ * radius r0 at the base to r1 at the tip, with a rounded tip.
+ */
+function tube(points: Vector3[], r0: number, r1: number, segments = 28, radial = 8): BufferGeometry {
+  const curve = new CatmullRomCurve3(points, false, 'centripetal');
+  const geo = new TubeGeometry(curve, segments, 1, radial, false);
+  // TubeGeometry builds rings of (radial + 1) vertices around curve.getPointAt(i / segments)
+  const pos = geo.attributes.position;
+  const p = new Vector3();
+  const o = new Vector3();
+  for (let i = 0; i <= segments; i++) {
+    const u = i / segments;
+    curve.getPointAt(u, p);
+    const r = r0 + (r1 - r0) * u;
+    for (let j = 0; j <= radial; j++) {
+      const k = i * (radial + 1) + j;
+      o.fromBufferAttribute(pos, k).sub(p).multiplyScalar(r).add(p);
+      pos.setXYZ(k, o.x, o.y, o.z);
+    }
+  }
+  const tip = points[points.length - 1];
+  return merge([geo.toNonIndexed(), at(new SphereGeometry(r1, radial, 6), tip.x, tip.y, tip.z)]);
+}
+
+/** A leg hanging from its pivot (top), tapered, with a paw resting on the ground. */
+function legGeometry(length: number, rTop: number, rBottom: number, paw: number): BufferGeometry {
+  const leg = new CylinderGeometry(rBottom, rTop, length - paw, 7);
+  return merge([at(leg, 0, -(length - paw) / 2, 0), at(ball(paw, 1, 0.65, 1.35), 0, -length + paw * 0.65, paw * 0.35)]);
+}
+
+interface Detail {
+  name: string;
+  color: string;
+  geometry: BufferGeometry;
+}
 
 /** Body geometry per kind, local frame: +z forward, y up, origin on the ground. */
 interface Shape {
   torso: BufferGeometry; // tinted (coat)
-  face: BufferGeometry; // eyes + nose (dark)
-  collar: BufferGeometry; // red
-  tail: BufferGeometry; // tinted, pivot at its base
+  accent: BufferGeometry; // tinted with a darker shade of the coat (dog ears, cat stripes)
+  details: Detail[]; // fixed colours: eyes, nose, markings, collar…
+  tail: BufferGeometry; // tinted, pivot at its base, already curved in the body frame
   leg: BufferGeometry; // tinted, pivot at its top
   tailAt: Vector3;
-  tailTilt: number; // radians back from vertical
-  legs: Vector3[]; // leg pivots (hips / shoulders)
+  legs: Vector3[]; // leg pivots: front right, front left, back right, back left
   collarAt: Vector3; // leash attachment
   coats: string[];
 }
 
 function dogShape(): Shape {
-  const body = new CylinderGeometry(0.1, 0.1, 0.34, 10);
-  body.rotateX(Math.PI / 2);
-  const earL = new BoxGeometry(0.03, 0.1, 0.055);
-  earL.rotateZ(0.35);
-  const earR = new BoxGeometry(0.03, 0.1, 0.055);
-  earR.rotateZ(-0.35);
-  const head = new SphereGeometry(0.09, 10, 8);
-  head.scale(1, 1, 1.12);
-  const collar = new TorusGeometry(0.062, 0.014, 6, 14);
-  collar.rotateX(Math.PI / 2.6);
-  const tail = new CylinderGeometry(0.02, 0.01, 0.17, 6);
-  tail.translate(0, 0.085, 0);
-  const leg = new CylinderGeometry(0.03, 0.026, 0.2, 6);
-  leg.translate(0, -0.1, 0);
+  const neck = new CylinderGeometry(0.058, 0.075, 0.15, 10);
+  neck.rotateX(0.55);
+  const muzzle = new CylinderGeometry(0.036, 0.05, 0.1, 10);
+  muzzle.rotateX(Math.PI / 2);
+  const ear = (side: number) => {
+    const g = ball(0.062, 0.3, 1, 0.7);
+    g.rotateZ(0.28 * side);
+    return at(g, 0.082 * side, 0.425, 0.235);
+  };
+  const collar = new TorusGeometry(0.063, 0.012, 6, 16);
+  collar.rotateX(-(Math.PI / 2 - 0.55));
+  const tongue = new BoxGeometry(0.026, 0.006, 0.036);
+  tongue.rotateX(0.35);
   return {
     torso: merge([
-      at(body, 0, 0.27, 0),
-      at(new SphereGeometry(0.1, 10, 8), 0, 0.27, 0.17),
-      at(new SphereGeometry(0.1, 10, 8), 0, 0.27, -0.17),
-      at(head, 0, 0.39, 0.27),
-      at(new BoxGeometry(0.075, 0.065, 0.1), 0, 0.36, 0.37),
-      at(earL, 0.08, 0.37, 0.25),
-      at(earR, -0.08, 0.37, 0.25),
+      at(ball(0.112, 1, 1.05, 1.1), 0, 0.3, 0.1), // chest
+      at(ball(0.098, 1, 0.94, 1.9), 0, 0.29, -0.02), // belly
+      at(ball(0.094), 0, 0.295, -0.14), // hips
+      at(ball(0.058, 0.75, 1.15, 1.05), 0.062, 0.255, -0.14), // haunches
+      at(ball(0.058, 0.75, 1.15, 1.05), -0.062, 0.255, -0.14),
+      at(ball(0.05, 0.8, 1.2, 1), 0.064, 0.26, 0.13), // shoulders
+      at(ball(0.05, 0.8, 1.2, 1), -0.064, 0.26, 0.13),
+      at(neck, 0, 0.375, 0.17),
+      at(ball(0.086, 1, 0.95, 1.05), 0, 0.455, 0.245), // head
+      at(muzzle, 0, 0.425, 0.33),
+      at(ball(0.036, 1, 0.9, 1), 0, 0.425, 0.375), // muzzle tip
     ]),
-    face: merge([
-      at(new BoxGeometry(0.035, 0.028, 0.022), 0, 0.383, 0.42),
-      at(new SphereGeometry(0.013, 6, 4), 0.04, 0.42, 0.345),
-      at(new SphereGeometry(0.013, 6, 4), -0.04, 0.42, 0.345),
-    ]),
-    collar: at(collar, 0, 0.33, 0.21),
-    tail: tail.toNonIndexed(),
-    leg: leg.toNonIndexed(),
-    tailAt: new Vector3(0, 0.31, -0.24),
-    tailTilt: 0.75,
-    legs: [new Vector3(0.06, 0.2, 0.15), new Vector3(-0.06, 0.2, 0.15), new Vector3(0.06, 0.2, -0.15), new Vector3(-0.06, 0.2, -0.15)],
-    collarAt: new Vector3(0, 0.33, 0.24),
+    accent: merge([ear(1), ear(-1)]), // floppy ears
+    details: [
+      {
+        name: 'markings',
+        color: '#f4ead8',
+        geometry: merge([
+          at(ball(0.072, 0.9, 1.25, 0.6), 0, 0.31, 0.18), // chest blaze
+          at(ball(0.034, 1.1, 0.7, 1.2), 0, 0.408, 0.345), // chin
+        ]),
+      },
+      {
+        name: 'face',
+        color: '#1e1714',
+        geometry: merge([
+          at(ball(0.021, 1.35, 0.95, 1), 0, 0.438, 0.405), // nose
+          at(ball(0.014), 0.037, 0.475, 0.31), // eyes
+          at(ball(0.014), -0.037, 0.475, 0.31),
+        ]),
+      },
+      { name: 'tongue', color: '#e07a86', geometry: at(tongue, 0, 0.395, 0.365) },
+      { name: 'collar', color: '#c8413a', geometry: at(collar, 0, 0.37, 0.185) },
+      { name: 'tag', color: '#e8c24a', geometry: at(ball(0.015, 1, 1, 0.5), 0, 0.322, 0.232) },
+    ],
+    tail: tube([v(0, 0, 0), v(0, 0.05, -0.06), v(0, 0.12, -0.08), v(0, 0.18, -0.05)], 0.024, 0.01),
+    leg: legGeometry(0.215, 0.034, 0.024, 0.028),
+    tailAt: v(0, 0.33, -0.22),
+    legs: [v(0.062, 0.215, 0.13), v(-0.062, 0.215, 0.13), v(0.062, 0.215, -0.15), v(-0.062, 0.215, -0.15)],
+    collarAt: v(0, 0.36, 0.215),
     coats: ['#c98b4b', '#7a5232', '#e6ddcf'],
   };
 }
 
 function catShape(): Shape {
-  const body = new CylinderGeometry(0.065, 0.065, 0.28, 10);
-  body.rotateX(Math.PI / 2);
-  const earL = new ConeGeometry(0.032, 0.07, 4);
-  earL.rotateZ(-0.2);
-  const earR = new ConeGeometry(0.032, 0.07, 4);
-  earR.rotateZ(0.2);
-  const collar = new TorusGeometry(0.05, 0.01, 6, 14);
-  collar.rotateX(Math.PI / 2.4);
-  const tail = new CylinderGeometry(0.014, 0.01, 0.28, 6);
-  tail.translate(0, 0.14, 0);
-  const leg = new CylinderGeometry(0.019, 0.017, 0.15, 6);
-  leg.translate(0, -0.075, 0);
+  const neck = new CylinderGeometry(0.04, 0.05, 0.08, 10);
+  neck.rotateX(0.4);
+  const ear = (side: number, inner: boolean) => {
+    const g = inner ? new ConeGeometry(0.017, 0.04, 4) : new ConeGeometry(0.031, 0.066, 4);
+    g.rotateY(Math.PI / 4);
+    g.scale(1, 1, 0.45);
+    g.rotateZ(-0.28 * side);
+    return at(g, 0.043 * side, inner ? 0.37 : 0.375, inner ? 0.172 : 0.165);
+  };
+  const collar = new TorusGeometry(0.047, 0.009, 6, 16);
+  collar.rotateX(-(Math.PI / 2 - 0.4));
+  // tabby stripe: an arc over the back, around the body's long axis
+  const stripe = (z: number, r: number) => {
+    const g = new TorusGeometry(r, 0.0055, 4, 10, Math.PI * 0.55);
+    g.rotateZ(Math.PI * 0.225);
+    return at(g, 0, 0.212, z);
+  };
+  const whisker = (side: number, tilt: number) => {
+    const g = new BoxGeometry(0.075, 0.0025, 0.0025);
+    g.rotateZ(tilt * side);
+    g.rotateY(-0.35 * side);
+    return at(g, 0.05 * side, 0.293, 0.226);
+  };
+  const eye = (side: number) => at(ball(0.015, 1, 1.1, 0.6), 0.03 * side, 0.322, 0.229);
+  const pupil = (side: number) => at(new BoxGeometry(0.0055, 0.022, 0.004), 0.03 * side, 0.322, 0.236);
   return {
     torso: merge([
-      at(body, 0, 0.2, 0),
-      at(new SphereGeometry(0.065, 10, 8), 0, 0.2, 0.14),
-      at(new SphereGeometry(0.065, 10, 8), 0, 0.2, -0.14),
-      at(new SphereGeometry(0.075, 10, 8), 0, 0.29, 0.21),
-      at(earL, 0.042, 0.365, 0.2),
-      at(earR, -0.042, 0.365, 0.2),
+      at(ball(0.068, 1, 1.05, 1.1), 0, 0.222, 0.08), // chest
+      at(ball(0.066, 0.95, 0.95, 2), 0, 0.212, -0.02), // body
+      at(ball(0.07), 0, 0.216, -0.11), // hips
+      at(ball(0.045, 0.7, 1.15, 1.05), 0.042, 0.185, -0.11), // haunches
+      at(ball(0.045, 0.7, 1.15, 1.05), -0.042, 0.185, -0.11),
+      at(neck, 0, 0.27, 0.125),
+      at(ball(0.07, 1.12, 0.95, 0.95), 0, 0.31, 0.17), // head
+      ear(1, false),
+      ear(-1, false),
     ]),
-    face: merge([
-      at(new SphereGeometry(0.011, 6, 4), 0.03, 0.305, 0.275),
-      at(new SphereGeometry(0.011, 6, 4), -0.03, 0.305, 0.275),
-      at(new SphereGeometry(0.009, 6, 4), 0, 0.283, 0.285),
+    accent: merge([
+      stripe(0.035, 0.07),
+      stripe(-0.02, 0.066),
+      stripe(-0.075, 0.066),
+      stripe(-0.125, 0.07),
+      at(new BoxGeometry(0.008, 0.004, 0.05), 0, 0.376, 0.17), // forehead stripe
     ]),
-    collar: at(collar, 0, 0.25, 0.155),
-    tail: tail.toNonIndexed(),
-    leg: leg.toNonIndexed(),
-    tailAt: new Vector3(0, 0.23, -0.19),
-    tailTilt: 0.35,
-    legs: [new Vector3(0.04, 0.15, 0.11), new Vector3(-0.04, 0.15, 0.11), new Vector3(0.04, 0.15, -0.11), new Vector3(-0.04, 0.15, -0.11)],
-    collarAt: new Vector3(0, 0.25, 0.17),
+    details: [
+      {
+        name: 'markings',
+        color: '#f6f1ea',
+        geometry: merge([
+          at(ball(0.025), 0.018, 0.29, 0.222), // cheeks
+          at(ball(0.025), -0.018, 0.29, 0.222),
+          at(ball(0.045, 0.85, 1.1, 0.55), 0, 0.225, 0.135), // chest
+          whisker(1, 0.12),
+          whisker(1, -0.08),
+          whisker(-1, 0.12),
+          whisker(-1, -0.08),
+        ]),
+      },
+      { name: 'eyes', color: '#a6c93a', geometry: merge([eye(1), eye(-1)]) },
+      { name: 'face', color: '#1e1714', geometry: merge([pupil(1), pupil(-1)]) },
+      { name: 'pink', color: '#e8949c', geometry: merge([at(ball(0.009, 1.4, 0.8, 0.8), 0, 0.302, 0.243), ear(1, true), ear(-1, true)]) },
+      { name: 'collar', color: '#3a7fc8', geometry: at(collar, 0, 0.265, 0.14) },
+      { name: 'tag', color: '#e8c24a', geometry: at(ball(0.011, 1, 1, 0.5), 0, 0.233, 0.175) },
+    ],
+    // raised, curling forward at the tip
+    tail: tube([v(0, 0, 0), v(0, 0.03, -0.07), v(0, 0.12, -0.12), v(0, 0.22, -0.125), v(0, 0.285, -0.09), v(0, 0.3, -0.035)], 0.02, 0.013),
+    leg: legGeometry(0.17, 0.025, 0.018, 0.021),
+    tailAt: v(0, 0.23, -0.16),
+    legs: [v(0.036, 0.17, 0.08), v(-0.036, 0.17, 0.08), v(0.042, 0.17, -0.11), v(-0.042, 0.17, -0.11)],
+    collarAt: v(0, 0.255, 0.165),
     coats: ['#d9893b', '#8d8a86', '#3d3836'],
   };
 }
@@ -147,22 +243,25 @@ function makeMesh(geometry: BufferGeometry, color: string, name: string, count: 
 class PetMeshes {
   readonly shape: Shape;
   readonly torso: InstancedMesh;
-  readonly face: InstancedMesh;
-  readonly collar: InstancedMesh;
+  readonly accent: InstancedMesh;
   readonly tail: InstancedMesh;
   readonly legs: InstancedMesh;
+  /** Everything placed with the body matrix (one instance per character). */
+  readonly body: InstancedMesh[];
   readonly all: InstancedMesh[];
   constructor(kind: Kind) {
     this.shape = kind === 'dog' ? dogShape() : catShape();
     this.torso = makeMesh(this.shape.torso, '#ffffff', `${kind} body`, MAX, true);
-    this.face = makeMesh(this.shape.face, '#241c18', `${kind} face`, MAX, false);
-    this.collar = makeMesh(this.shape.collar, '#c8413a', `${kind} collar`, MAX, false);
+    this.accent = makeMesh(this.shape.accent, '#ffffff', `${kind} accent`, MAX, true);
     this.tail = makeMesh(this.shape.tail, '#ffffff', `${kind} tail`, MAX, true);
     this.legs = makeMesh(this.shape.leg, '#ffffff', `${kind} legs`, MAX * 4, true);
-    this.all = [this.torso, this.face, this.collar, this.tail, this.legs];
+    const details = this.shape.details.map((d) => makeMesh(d.geometry, d.color, `${kind} ${d.name}`, MAX, false));
+    this.body = [this.torso, this.accent, ...details];
+    this.all = [...this.body, this.tail, this.legs];
   }
   hide(i: number) {
-    for (const m of [this.torso, this.face, this.collar, this.tail]) m.setMatrixAt(i, HIDDEN);
+    for (const m of this.body) m.setMatrixAt(i, HIDDEN);
+    this.tail.setMatrixAt(i, HIDDEN);
     for (let k = 0; k < 4; k++) this.legs.setMatrixAt(i * 4 + k, HIDDEN);
   }
 }
@@ -197,6 +296,7 @@ export class Pets {
   private _collar = new Vector3();
   private _s = new Vector3();
   private _c = new Color();
+  private _accent = new Color();
 
   constructor() {
     this.group.name = 'pets';
@@ -250,18 +350,17 @@ export class Pets {
     // body
     this._q.setFromAxisAngle(UP, st.yaw);
     const base = this._m.compose(st.pos, this._q, this._s.setScalar(s));
-    meshes.torso.setMatrixAt(i, base);
-    meshes.face.setMatrixAt(i, base);
-    meshes.collar.setMatrixAt(i, base);
+    for (const m of meshes.body) m.setMatrixAt(i, base);
     const coat = meshes.shape.coats[Math.floor((((character.userData.seed ?? 0) % 1) + 1) % 1 * 3) % 3];
     this._c.set(coat);
     meshes.torso.setColorAt(i, this._c);
     meshes.tail.setColorAt(i, this._c);
+    meshes.accent.setColorAt(i, this._accent.copy(this._c).multiplyScalar(0.62));
     // tail: wag fast (dog) / sway slowly (cat), livelier when standing
     const t = ticker.time + character.animationOffset;
     const wag = kind === 'dog' ? Math.sin(t * (st.speed > 0.25 ? 10 : 16)) * 0.55 : Math.sin(t * 2.2) * 0.45;
     const sh = meshes.shape;
-    this._m2.makeRotationAxis(X, -sh.tailTilt).premultiply(new Matrix4().makeRotationAxis(UP, wag)).setPosition(sh.tailAt);
+    this._m2.makeRotationAxis(UP, wag).setPosition(sh.tailAt);
     meshes.tail.setMatrixAt(i, this._m2.premultiply(base));
     // legs: diagonal pairs step together
     const amp = 0.65 * Math.min(1, st.speed / 1.2);
@@ -284,7 +383,7 @@ export class Pets {
   commit(count: number) {
     const n = Math.min(count, MAX);
     for (const pet of [this._dog, this._cat]) {
-      for (const m of [pet.torso, pet.face, pet.collar, pet.tail]) m.count = n;
+      for (const m of [...pet.body, pet.tail]) m.count = n;
       pet.legs.count = n * 4;
       for (const m of pet.all) {
         m.instanceMatrix.needsUpdate = true;

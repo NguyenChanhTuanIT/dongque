@@ -79,6 +79,9 @@
     #ifdef IS_CHARACTER
         attribute float instanceSeed;
         varying float vSeed;
+        // Height in the bind pose (before skinning): striped tops band by it,
+        // so the stripes stay straight and follow the body as it moves.
+        varying float vBindY;
         #ifdef CHAR_VERTEX_COLOR
             attribute vec3 charColor;
             varying vec3 vCharColor;
@@ -113,6 +116,7 @@
 
         #ifdef IS_CHARACTER
             vSeed = instanceSeed;
+            vBindY = position.y;
             #ifdef CHAR_VERTEX_COLOR
                 vCharColor = charColor;
             #endif

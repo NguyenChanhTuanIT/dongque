@@ -468,3 +468,14 @@ button.danger-solid:hover:not(:disabled) { background: var(--error); filter: bri
 /* Shop prices: price input + "for sale" checkbox on one row. */
 .row.shop-item input[type='number'] { max-width: 110px; }
 .shop-enabled { display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
+
+/* ---- Góp ý (feedback.ts) ---- */
+.feedback-list { display: grid; gap: 10px; }
+.feedback-card { display: grid; gap: 10px; border-left: 3px solid transparent; }
+.feedback-card.status-new { border-left-color: var(--accent-strong); }
+.feedback-card.status-done { opacity: 0.75; }
+.feedback-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.feedback-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.feedback-note { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--reload-bg); color: var(--reload-text); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.feedback-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.feedback-more { justify-self: center; }

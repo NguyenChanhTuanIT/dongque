@@ -141,6 +141,10 @@ export const SECTIONS: Section[] = [
       { path: 'features.npcs.seaCouple', label: 'Hai bạn ngồi ngắm biển (nam ôm eo nữ)', kind: 'bool' },
       { path: 'features.npcs.kiteFlyers', label: 'Hai bạn thả diều trên bãi biển', kind: 'bool' },
       { path: 'features.npcs.guitarist', label: 'Bạn đàn hát cuối con đường', kind: 'bool' },
+      { path: 'features.npcs.fisher', label: 'Bạn câu cá trên cầu câu', kind: 'bool' },
+      { path: 'features.npcs.henFeeder', label: 'Bạn cho gà ăn ở chuồng gà', kind: 'bool' },
+      { path: 'features.npcs.waterCarrier', label: 'Bạn gánh nước từ giếng ra chuồng gà', kind: 'bool' },
+      { path: 'features.npcs.butterflyKids', label: 'Hai bạn bắt bướm trên bãi bướm ven biển', kind: 'bool' },
     ],
   },
   {

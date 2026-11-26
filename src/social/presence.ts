@@ -1,6 +1,6 @@
 // Who is in the room, by character id ('local' = us, otherwise the relay id),
 // fed by the mp_* events the character engine emits (engine/characters.ts).
-// Players without an account-verified name show as "Khách <id>".
+// Players without an account-verified name show as "Người dùng ẩn danh <id>".
 
 import { events } from '../core/events';
 
@@ -38,5 +38,5 @@ export function displayName(charId: string): string {
   const name = names.get(charId);
   if (name) return name;
   const id = charId === 'local' ? selfId : charId;
-  return id ? `Khách ${id}` : 'Bạn';
+  return id ? `Người dùng ẩn danh ${id}` : 'Bạn';
 }

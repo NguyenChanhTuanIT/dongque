@@ -39,6 +39,12 @@ export interface MultiplayerConnection {
   sendChat?(text: string): boolean;
   sendReward?(action: number): boolean;
   sendShop?(item: string, price: number): boolean;
+  /** An owned item broke (the fishing rod): the relay removes it from the wallet. */
+  sendBreak?(item: string): boolean;
+  /** Play-together message (see server/realm.mjs SOCIAL). */
+  sendSocial?(kind: number, id: string, activity: number): boolean;
+  /** Server clock in ms, shared by the room (null until known). */
+  sharedNowMs?(): number | null;
   _sendProfile?(profile: import('./socket').Profile | null): Promise<void>;
   _dispose(): void;
 }

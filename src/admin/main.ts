@@ -23,9 +23,10 @@ import { icon, type IconName } from './icons';
 import { el } from './dom';
 import { createAdminApi, serverBase } from './api';
 import { createUserPages } from './users';
+import { createFeedbackPage } from './feedback';
 
 const root = document.getElementById('admin')!;
-const APP_TITLE = 'SummerTime Admin';
+const APP_TITLE = 'RelaxTime Admin';
 
 function getPath(obj: unknown, path: string): unknown {
   return path.split('.').reduce<any>((o, k) => (o == null ? undefined : o[k]), obj);
@@ -77,6 +78,14 @@ const ROUTES: Route[] = [
     title: 'Người chơi đang online',
     navLabel: 'Đang online',
     description: 'Các kết nối hiện tại trên server multiplayer, theo phòng.',
+  },
+  {
+    id: 'feedback',
+    group: 'Người dùng',
+    icon: 'mail',
+    title: 'Góp ý về sản phẩm',
+    navLabel: 'Góp ý',
+    description: 'Góp ý người chơi gửi từ nút ✉ trong game (mỗi tài khoản / IP 1 lần mỗi ngày). Đánh dấu đã đọc, đã xử lý, ghi chú nội bộ hoặc xoá.',
   },
   ...SECTIONS.map((s): Route => ({
     id: s.id,
@@ -187,6 +196,7 @@ async function boot() {
       () => user.getIdToken(),
     );
     const userPages = createUserPages({ db, fs, me: user, isAdmin, api });
+    const feedbackPage = createFeedbackPage({ db, fs, isAdmin, api });
 
     // --- Sidebar ------------------------------------------------------------
     const navLinks = new Map<string, HTMLAnchorElement>();
@@ -211,7 +221,7 @@ async function boot() {
     const sidebar = el('aside', { className: 'sidebar' }, [
       el('div', { className: 'brand' }, [
         el('div', { className: 'brand-mark', textContent: 'S' }),
-        el('div', {}, [el('strong', { textContent: 'SummerTime' }), el('small', { className: 'muted', textContent: `Admin · ${firebaseOptions.projectId}` })]),
+        el('div', {}, [el('strong', { textContent: 'RelaxTime' }), el('small', { className: 'muted', textContent: `Admin · ${firebaseOptions.projectId}` })]),
       ]),
       nav,
       el('div', { className: 'sidebar-footer' }, [
@@ -291,7 +301,7 @@ async function boot() {
       );
       document.title = `${r.title} · ${APP_TITLE}`;
       resetSectionBtn.hidden = !r.section;
-      reloadBtn.hidden = r.id === 'users' || r.id === 'online';
+      reloadBtn.hidden = r.id === 'users' || r.id === 'online' || r.id === 'feedback';
       pageCtrl.abort();
       pageCtrl = new AbortController();
 
@@ -302,6 +312,7 @@ async function boot() {
       if (r.section) body = renderSection(r.section);
       else if (r.id === 'users') body = userPages.renderUsersPage(pageCtrl.signal);
       else if (r.id === 'online') body = userPages.renderOnlinePage(pageCtrl.signal);
+      else if (r.id === 'feedback') body = feedbackPage.render(pageCtrl.signal);
       else if (r.id === 'json') body = renderJson();
       else body = renderOverview();
       page.replaceChildren(header, ...body);
@@ -533,7 +544,7 @@ async function boot() {
       const downloadBtn = el('button', { type: 'button', textContent: 'Tải xuống .json' });
       downloadBtn.addEventListener('click', () => {
         const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-        el('a', { href: url, download: 'summertime-config.json' }).click();
+        el('a', { href: url, download: 'dongque-config.json' }).click();
         URL.revokeObjectURL(url);
       });
       return [

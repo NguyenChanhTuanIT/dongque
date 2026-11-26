@@ -4,6 +4,7 @@
 
 import { Vector3, type Camera, type Object3D } from 'three';
 import { events } from '../core/events';
+import { isAnnouncement } from './announce';
 
 /** Beyond this camera distance (world units) bubbles are hidden. */
 const BUBBLE_DISTANCE = 45;
@@ -29,12 +30,23 @@ export class NameTags {
   private readonly tags = new Map<string, Tag>();
   private readonly seen = new Set<string>();
   private readonly v = new Vector3();
+  /** NPCs with a bubble showing: key → their object. */
+  private readonly npcs = new Map<string, Object3D>();
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
     this.root.id = 'nametags';
     parent.append(this.root);
-    events.on('mp_chat', (id: string, text: string) => this.say(id, text));
+    // Fishing news go to the chat panel only (components/announce.ts), no bubble.
+    events.on('mp_chat', (id: string, text: string) => {
+      if (!isAnnouncement(text)) this.say(id, text);
+    });
+    // NPC lines (scene/npcs.ts): NPCs are not in forEachCharacter, so the
+    // speaking object comes along and is tracked while its bubble shows.
+    events.on('npc_say', (key: string, object: Object3D, text: string) => {
+      this.npcs.set(key, object);
+      this.say(key, text);
+    });
     // Emitted by scene/characters.ts every frame, right after characters move.
     events.on('webgl_characters_updated', (camera: Camera, characters: CharacterSource, headHeight: number) =>
       this.update(camera, characters, headHeight),
@@ -70,7 +82,7 @@ export class NameTags {
     const h = window.innerHeight;
     const now = performance.now();
     this.seen.clear();
-    characters.forEachCharacter((id, object) => {
+    const place = (id: string, object: Object3D) => {
       this.seen.add(id);
       const tag = this.tag(id);
       if (tag.bubbleUntil && now >= tag.bubbleUntil) {
@@ -96,7 +108,12 @@ export class NameTags {
       tag.el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -100%)`;
       tag.el.style.opacity = String(Math.min(1, Math.max(0.35, 1.4 - distance / FADE_DISTANCE)));
       tag.el.style.zIndex = String(1000 - Math.round(distance * 10));
-    });
+    };
+    characters.forEachCharacter(place);
+    for (const [id, object] of this.npcs) {
+      place(id, object);
+      if (!this.tags.get(id)?.bubbleUntil) this.npcs.delete(id); // done talking
+    }
     for (const [id, tag] of this.tags) {
       if (!this.seen.has(id)) {
         tag.el.remove();

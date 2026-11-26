@@ -10,23 +10,28 @@ import { ITEM_BY_ID, itemForEmote, normalizePrice, DEFAULT_PRICE } from './catal
 
 let owned = new Set<string>();
 let signedIn = false;
+/** The wallet is this tab's guest wallet (lost when the tab closes). */
+let guest = false;
 let flowers = 0;
 let prices: Record<string, { price: number; enabled: boolean }> = {};
 
 const changed = () => events.emit('inventory_changed');
 
-events.on('mp_wallet', (wallet: { owned?: unknown; flowers?: unknown } | null) => {
+events.on('mp_wallet', (wallet: { owned?: unknown; flowers?: unknown; guest?: unknown } | null) => {
   const next = new Set(Array.isArray(wallet?.owned) ? wallet.owned.filter((id): id is string => typeof id === 'string') : []);
   const nextFlowers = typeof wallet?.flowers === 'number' ? wallet.flowers : 0;
-  const same = signedIn === !!wallet && flowers === nextFlowers && next.size === owned.size && [...next].every((id) => owned.has(id));
+  const nextGuest = wallet?.guest === true;
+  const same = signedIn === !!wallet && guest === nextGuest && flowers === nextFlowers && next.size === owned.size && [...next].every((id) => owned.has(id));
   owned = next;
   signedIn = !!wallet;
+  guest = nextGuest;
   flowers = nextFlowers;
   if (!same) changed();
 });
 events.on('mp_disconnected', () => {
   owned = new Set();
   signedIn = false;
+  guest = false;
   flowers = 0;
   changed();
 });
@@ -37,8 +42,12 @@ watchConfig((config) => {
   changed();
 });
 
-/** Signed in (the relay sent a wallet). */
+/** Has a wallet (an account, or this tab's guest wallet): can check in and buy. */
 export const isSignedIn = () => signedIn;
+/** The wallet is a guest wallet: it is lost when the tab closes unless the player signs up. */
+export const isGuest = () => guest;
+/** A guest wallet with something to lose (flowers or items). */
+export const guestHasProgress = () => guest && (flowers > 0 || owned.size > 0);
 export const flowerBalance = () => flowers;
 
 /** Free items and bought ones. */

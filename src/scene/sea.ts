@@ -29,7 +29,9 @@ export class Sea extends SceneModule {
         tMap1: { value: textureLoader.load('sea1-normal-highq.ktx2', 'repeat') },
         uColor: { value: new Color('#5a7aa2') },
         uColorFoam: { value: new Color('#ffffff') },
-        tCloudsTop: { value: textureLoader.load('clouds_top-highq.png', 'repeat') },
+        // Same KTX2 as the land (materials.ts): one 1.1 MB download instead of a
+        // 2.9 MB PNG, and the same orientation, so cloud shadows line up at the shore.
+        tCloudsTop: { value: textureLoader.load('clouds_top-highq.ktx2', 'repeat') },
         tReflection: { value: null },
         textureMatrix: { value: new Matrix4() },
         uReflectionResolution: { value: new Vector2() },

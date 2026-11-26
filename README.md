@@ -1,14 +1,14 @@
-<h1 align="center">SummerTime</h1>
+<h1 align="center">RelaxTime</h1>
 <p align="center">
  
-![Summer Afternoon scene](screenshots/screenshot.png)
+![Relax Afternoon scene](screenshots/screenshot.png)
 
 </p>
 
-An interactive WebGL summer scene: walk a kid around a seaside village with
+An interactive WebGL relax scene: walk a kid around a seaside village with
 sea, sky, birds, trees, grass, houses and **5 hidden secrets** (the `0/5`
-counter in the corner). Based on **Summer Afternoon**, the WebGL experiment by
-[Vicente Lucendo](https://summer-afternoon.vlucendo.com).
+counter in the corner). Based on **Relax Afternoon**, the WebGL experiment by
+[Vicente Lucendo](https://relax-afternoon.vlucendo.com).
 
 This version adds an admin panel with live remote config (Firebase) and its own
 WebSocket multiplayer server.
@@ -67,7 +67,7 @@ toggled live in the admin panel (section **NPC**, `config.features.npcs`):
 
 Optional sounds, picked up automatically when present (louder when close):
 `public/assets/audio/npc-laugh.mp3` (laughter, one-shot) and
-`public/assets/audio/npc-guitar.mp3` (guitar / song, looped).
+`public/assets/audio/guitarsong1.mp3` (guitar / song, looped).
 
 NPCs are drawn by the same instanced mesh as players (outfits, emotes, props)
 but use ids prefixed `npc:`; they are excluded from `forEachCharacter`
@@ -112,10 +112,13 @@ same skeleton, or code) with a `PART` id, **append** the item to its slot in
   pops up as a speech bubble over the speaker (`src/components/nametags.ts`). The relay cleans each line
   (invalid UTF-8, control/bidi characters, max 160 characters) and allows a
   burst of 5 lines, then one every 2 s.
-- **Names:** players start as `Khách <id>`. Choosing a name (character panel →
-  *Tên hiển thị* → **Đăng nhập**) requires an account: the button opens a
-  sign-in modal (email + password), and new players switch to *Đăng ký* to
-  create one and pick their name at the same time. The relay verifies the
+- **Names:** players show as `Người dùng ẩn danh <id>` until they have an
+  account name. The name is picked when signing up (*Đăng ký* in the sign-in
+  modal; email + password). The account card at the top of the character panel
+  shows the name and email, renames (relay-verified) and signs out; a new device
+  reads the name back from the Firestore profile (`users/{uid}.name`). The
+  sign-in form has "Quên mật khẩu?" (Firebase password reset email). Without a
+  Firebase config the game says accounts are off and hides the sign-up buttons. The relay verifies the
   Firebase ID token (`server/firebase-auth.mjs`, no extra dependency) before
   showing the name to anyone. The name is remembered per account on that
   device and re-claimed on every reconnect. The email is never shown. Names
@@ -132,7 +135,7 @@ same skeleton, or code) with a `PART` id, **append** the item to its slot in
 ## Daily rewards (flowers)
 
 The flower button in the corner menu opens *Quà mỗi ngày*. Flowers (🌸) are the
-currency of the shop (below). A signed-in account gets, per calendar day in Vietnam time:
+currency of the shop (below). Every player gets, per calendar day in Vietnam time:
 
 - **Check-in** once a day: 5 flowers, Saturday and Sunday 10.
 - **Online milestones**, one after the other: 10 min → 5, then 30 more min
@@ -143,21 +146,33 @@ currency of the shop (below). A signed-in account gets, per calendar day in Viet
 
 The relay decides and stores everything (`server/wallets.mjs`), so players
 cannot edit their balance: `wallets.json` in `DATA_DIR` (default
-`server/data/`, git-ignored; with Docker mount a volume on `/app/data`).
-`REWARDS_TZ` changes the calendar time zone. Guests see a sign-in button.
+`server/data/`, git-ignored).
+`REWARDS_TZ` changes the calendar time zone.
+
+**Guests** (not signed in) play the same way with a wallet tied to their browser
+tab: a random key in `sessionStorage` (`[8] GUEST` message), kept in the relay's
+memory only. Reloading keeps it, closing the tab loses it: the rewards and shop
+panels warn about it, and the first flower or item opens a *Lưu dữ liệu của bạn*
+modal (`src/components/guestModal.ts`, once per tab; browsers do not allow a
+custom dialog when the tab closes, so there is no close prompt). Signing up moves the guest wallet into the new
+account (`wallets.adopt`, WALLET `result.sync = "adopted"`); signing in to an
+account that already has progress keeps the two apart (`"skipped"`).
 
 ## Shop (flowers)
 
-The bag button in the corner menu opens two tabs:
+Two buttons in the corner menu:
 
-- **Cửa hàng** — items by shelf: *Trang phục* (Áo xanh biển, Áo hồng, Quần
+- **Cửa hàng** (bag button) — items by shelf: *Trang phục* (Áo xanh biển, Áo hồng, Quần
   jean), *Giày dép* (Giày thể thao, Giày vải đỏ), *Phụ kiện* (Mũ rơm, Mũ lưỡi
   trai, Kính râm, Kính tròn, Dây chuyền vỏ sò, Vòng hoa) and *Đồ dã ngoại*
   (Cần câu, Đàn guitar, Diều, Kem). **Mua** then a second click confirms;
   items you cannot afford show how many flowers are missing. Bought clothes
   are put on right away.
-- **Túi đồ** — what the account owns: *Mặc / Đang mặc* (click to take off) for
-  clothes, *Dùng* for picnic items (same as their emote key).
+- **Tủ đồ** — tab of the character panel (colour-square button, next to the
+  *Nhân vật* tab with name, outfit rows and random colour): what the account
+  owns, *Mặc / Đang mặc* (click to take off) for clothes, *Dùng* for picnic
+  items (same as their emote key). Shop links to an item already owned
+  (`shop_open`) open it here instead.
 
 The basic items (t-shirt, shorts, skirt, sandals, bare feet, no hat / glasses
 / necklace, every hairstyle) stay free for everyone, guests included.
@@ -245,6 +260,30 @@ Firebase Auth accounts themselves still happens in the Firebase Console.
 After updating, publish the new `firestore.rules` (they add the `users`
 collection and let admins manage `admins`).
 
+## Feedback (Góp ý)
+
+The letter button (✉) in the corner menu opens *Góp ý*: one textarea
+(5–1000 characters, Ctrl/⌘ + Enter sends). After sending, the panel shows a
+thank-you letter card instead of the form until the next day.
+
+- **Anti-spam:** one feedback per calendar day (Vietnam time, `REWARDS_TZ`)
+  per account when signed in, per IP for guests; at most 5 per IP and 1000 for
+  everyone per day. The relay enforces it (`server/feedback.mjs`,
+  `POST /api/feedback`, answers 429 `already`); the browser also remembers
+  the day so the thank-you card shows right away. IPs are only kept hashed
+  (salted per day) for the counters. Behind a proxy the IP comes from
+  `X-Forwarded-For`, like the WebSocket limits.
+- **Storage:** `feedback.json` in `DATA_DIR` (text, time, uid, browser,
+  status, admin note); the oldest go past 5000.
+- **Admin:** *Người dùng → Góp ý* lists them newest first with the sender's
+  name / email (Firestore profile), filters (Mới / Đã đọc / Đã xử lý / Tất cả),
+  search, a private note, copy and delete. It uses the relay's admin API
+  (`/admin/api/feedback`, `/feedback/update`, `/feedback/delete`), so the
+  same `FIREBASE_PROJECT_ID` setup as the online page applies.
+
+Code: `src/components/feedback.ts` (panel), `server/feedback.mjs`,
+`src/admin/feedback.ts` (admin page).
+
 ## Multiplayer server (WebSocket)
 
 Remote players go through our own relay, `server/realm.mjs` (Node.js + `ws`),
@@ -256,7 +295,7 @@ broadcasts the changed ones 20×/s to everyone in the same room.
   (`ws://localhost:5173/mp`, counts at `/health`). Nothing else to start.
 - **Production:** `npm run build && npm run server` serves the site, the admin
   page, `/mp` and `/health` from one process on port 8787. Or with Docker:
-  `docker build -t summertime . && docker run -p 8787:8787 summertime`.
+  `docker build -t dongque . && docker run -p 8787:8787 dongque`.
   Behind HTTPS, proxy WebSocket upgrades on `/mp` (the client then uses
   `wss://`).
 - **Server URL:** by default the game connects to `/mp` on the page's own
@@ -265,8 +304,21 @@ broadcasts the changed ones 20×/s to everyone in the same room.
 - **Server settings (env):** `PORT`, `HOST`, `STATIC_DIR`,
   `MAX_PLAYERS_PER_ROOM` (127), `TICK_MS` (50), `VIEW_DISTANCE` (0 = relay
   everyone; otherwise only nearby players), `ALLOWED_ORIGINS`,
+  `MAX_CONNECTIONS` (1000), `MAX_PER_IP` (12, from `X-Forwarded-For` behind a
+  proxy), `MAX_ROOMS` (20),
   `FIREBASE_PROJECT_ID` (account-verified names, see above; with Docker pass
   `-e FIREBASE_PROJECT_ID=...`).
+- **HTTP:** brotli/gzip for JS, CSS, HTML, JSON and wasm; hashed build files
+  cached for a year (`immutable`), other assets a day, HTML revalidated;
+  security headers (CSP, `nosniff`, `X-Frame-Options: DENY`, HSTS,
+  `Referrer-Policy`). The CSP allows `unsafe-eval` only because the Basis
+  texture transcoder needs `new Function` in its worker.
+- **Moderation:** display names are unique among online players (accents and
+  case ignored) and names like Admin / Quản trị / Hệ thống are refused
+  (NOTICE 6). A kick refuses that IP for 10 min, a ban for 6 h (so the player
+  cannot come back as a guest); unbanning lifts it. Online rewards only count
+  while the player did something (moved, changed pose, chatted) in the last
+  10 min. On Render, `ALLOWED_ORIGINS` defaults to `RENDER_EXTERNAL_URL`.
 - **Protections:** frame validation (size, version, finite coordinates),
   40 frames/s per client (extra dropped, flooding disconnects), 4 KB max
   message, chat rate limit, ping every 15 s to drop dead connections.
@@ -339,8 +391,8 @@ firestore.rules      # Firestore security rules (config read-only for players)
 
 ## Credits & disclaimer
 
-- Original experience: **Summer Afternoon** by **Vicente Lucendo**,
-  https://summer-afternoon.vlucendo.com
+- Original experience: **Relax Afternoon** by **Vicente Lucendo**,
+  https://relax-afternoon.vlucendo.com
 - All 3D assets, textures, audio, fonts and the original code belong to their
   respective authors; this project is not affiliated with or endorsed by the
   original author.

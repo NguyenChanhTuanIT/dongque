@@ -249,6 +249,29 @@ class Engine {
     this.renderer.info.reset();
     for (const cb of this.mainScene.beforeRenderCbs) cb();
     this.composer.render(delta);
+    if (this._captures.length) this._flushCaptures();
+  }
+
+  private _captures: Array<(frame: HTMLCanvasElement) => void> = [];
+
+  /**
+   * A copy of the next rendered frame (the 3D scene only, no HTML UI). Read
+   * right after rendering, in the same task, so the WebGL buffer is still
+   * there without preserveDrawingBuffer (which would cost every frame).
+   */
+  captureNextFrame(): Promise<HTMLCanvasElement> {
+    return new Promise((resolve) => this._captures.push(resolve));
+  }
+
+  private _flushCaptures() {
+    const source = this.renderer.domElement;
+    const frame = document.createElement('canvas');
+    frame.width = source.width;
+    frame.height = source.height;
+    frame.getContext('2d')?.drawImage(source, 0, 0);
+    const waiting = this._captures;
+    this._captures = [];
+    for (const resolve of waiting) resolve(frame);
   }
 }
 

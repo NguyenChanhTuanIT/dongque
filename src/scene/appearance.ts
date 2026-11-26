@@ -152,6 +152,8 @@ const KIND_SKIN = 1;
 const KIND_PLAYER = 2; // player color (the color button)
 /** Fixed color from the character palette: colorRow = index (glsl/fragment.glsl charPalette). */
 const KIND_PALETTE = 3;
+/** Shop palette colour in stripes with white (fragment.glsl, by bind-pose height). */
+const KIND_STRIPED = 4;
 const COLOR = {
   denim: 0,
   sky: 1,
@@ -163,7 +165,10 @@ const COLOR = {
   cream: 7,
   flowerPink: 8,
   flowerYellow: 9,
+  /** Shorts: the clothes colour paints the t-shirt instead (see withOutfitParts). */
+  khaki: 10,
 } as const;
+
 
 interface ExtraPart {
   geometry: BufferGeometry;
@@ -365,15 +370,16 @@ function buildExtraParts(kid: BufferGeometry): ExtraPart[] {
   const kindOf = (i: number) => Math.round(info.getY(i));
   const rowOf = (i: number) => Math.round(info.getX(i));
   /** A recolored copy of kid triangles, skinned like the original. */
-  const recolor = (test: (i: number) => boolean, color: number, part: number, testTriangle?: (a: number, b: number, c: number) => boolean) => {
+  const recolor = (test: (i: number) => boolean, color: number, part: number, testTriangle?: (a: number, b: number, c: number) => boolean, kind = KIND_PALETTE) => {
     const copy = copyTriangles(kid, test, testTriangle);
-    parts.push({ geometry: copy.geometry, bone: 0, colorRow: color, colorKind: KIND_PALETTE, part, skin: copy.skin });
+    parts.push({ geometry: copy.geometry, bone: 0, colorRow: color, colorKind: kind, part, skin: copy.skin });
   };
 
-  // Tops: the t-shirt in other colors.
+  // Tops: striped t-shirts (colour / white bands, drawn by the shader). The
+  // plain t-shirt takes the clothes colour, so the shop tops need a pattern.
   const isShirt = (i: number) => kindOf(i) === KIND_FIXED && rowOf(i) === ROW.tshirt;
-  recolor(isShirt, COLOR.sky, PART.topBlue);
-  recolor(isShirt, COLOR.pink, PART.topPink);
+  recolor(isShirt, COLOR.sky, PART.topBlue, undefined, KIND_STRIPED);
+  recolor(isShirt, COLOR.pink, PART.topPink, undefined, KIND_STRIPED);
 
   // Jeans: the shorts in denim instead of the player color.
   recolor((i) => kindOf(i) === KIND_PLAYER && pos.getY(i) < 1.0, COLOR.denim, PART.jeans);
@@ -516,6 +522,17 @@ export function withOutfitParts(kid: BufferGeometry): BufferGeometry {
     at += n;
   }
   out.setAttribute('partId', new BufferAttribute(partId, 1));
+
+  // Clothes colour ("Màu áo"): the original kid has the player colour on the
+  // shorts and a fixed cream t-shirt. Swap them: the t-shirt takes the player
+  // colour, the shorts a fixed khaki. (Parts are told apart above, from the
+  // original colorInfo, so this only changes how they are painted.) The hat
+  // band, hair ties and skirt keep the player colour, matching the t-shirt.
+  const colorInfo = out.attributes.colorInfo as BufferAttribute;
+  for (let i = 0; i < baseCount; i++) {
+    if (partId[i] === PART.tshirt) colorInfo.setXY(i, 0, KIND_PLAYER);
+    else if (partId[i] === PART.shorts) colorInfo.setXY(i, COLOR.khaki, KIND_PALETTE);
+  }
 
   const indices: number[] = Array.from(kid.index!.array as ArrayLike<number>);
   at = baseCount;

@@ -3,17 +3,19 @@ import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createRealm } from './server/realm.mjs';
 import { createAdminApi } from './server/admin-api.mjs';
+import { createFeedback } from './server/feedback.mjs';
 
 /**
  * Runs the multiplayer relay (server/realm.mjs) inside `vite dev` and
  * `vite preview`: WebSocket at /mp, online counts at /health and the admin API
- * at /admin/api/*, on the same port as the page, so no second process is needed during development.
+ * at /admin/api/*, product feedback at /api/feedback, on the same port as the page, so no second process is needed during development.
  */
 function multiplayerRelay(firebaseProjectId: string): Plugin {
   let realm: ReturnType<typeof createRealm> | null = null;
   let adminApi: ReturnType<typeof createAdminApi> | null = null;
+  let feedback: ReturnType<typeof createFeedback> | null = null;
   const admin = (req: IncomingMessage, res: ServerResponse, next: () => void) => {
-    if (!adminApi?.(req, res)) next();
+    if (!adminApi?.(req, res) && !feedback?.handle(req, res)) next();
   };
   const health = (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     if (req.url !== '/health' || !realm) return next();
@@ -24,13 +26,18 @@ function multiplayerRelay(firebaseProjectId: string): Plugin {
   };
   const attach = (httpServer: import('node:http').Server | null) => {
     realm?.close();
+    feedback?.flush();
     realm = createRealm({ firebaseProjectId });
-    adminApi = createAdminApi({ realm, projectId: firebaseProjectId });
+    feedback = createFeedback({ dataDir: fileURLToPath(new URL('./server/data', import.meta.url)), projectId: firebaseProjectId });
+    adminApi = createAdminApi({ realm, feedback, projectId: firebaseProjectId });
     httpServer?.on('upgrade', (req, socket, head) => realm?.handleUpgrade(req, socket, head));
-    httpServer?.on('close', () => realm?.close());
+    httpServer?.on('close', () => {
+      realm?.close();
+      feedback?.flush();
+    });
   };
   return {
-    name: 'summertime-multiplayer',
+    name: 'dongque-multiplayer',
     configureServer(server) {
       attach(server.httpServer as import('node:http').Server | null);
       server.middlewares.use(health);

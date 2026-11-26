@@ -173,8 +173,11 @@ export class Circles extends Group {
 // Controls
 // ---------------------------------------------------------------------------
 
-/** Emote slots beyond 1..9 (keep in sync with the `key` of scene/emotes.ts EMOTES). */
-const EXTRA_EMOTE_KEYS: Record<string, number> = { Digit0: 10, KeyQ: 11, KeyH: 12, KeyC: 13, KeyM: 14 };
+/** Default emote keys (KeyboardEvent.code → slot) until setEmoteKeys() gives the menu order. */
+const DEFAULT_EMOTE_KEYS: Record<string, number> = { Digit0: 10, KeyQ: 11, KeyH: 12, KeyC: 13, KeyM: 14 };
+
+/** Key label ('V', '2'…) → KeyboardEvent.code. */
+const keyCode = (key: string) => (/^[0-9]$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`);
 
 export interface ControlsOptions {
   mouseCenter?: Vector2;
@@ -204,6 +207,8 @@ export class Controls {
   private _sprintKey = false;
   private _sprintMultiplier = 1.6;
   private _emoteGamepadLatch = false;
+  /** KeyboardEvent.code → emote slot (1-based); WASD / E / Space stay reserved. */
+  private _emoteKeys: Record<string, number> = { ...DEFAULT_EMOTE_KEYS };
   /** True while the player holds a sprint input and is moving (read by the engine). */
   sprinting = false;
 
@@ -251,13 +256,24 @@ export class Controls {
         if (down && !e.repeat) events.emit('webgl_character_emote', 1);
         break;
       default: {
-        // Emote slots (scene/emotes.ts EMOTES order): 1..9, then 0, Q, H.
+        // Emote slots (scene/emotes.ts EMOTES order, see setEmoteKeys).
         if (!down || e.repeat) break;
-        const slot = /^Digit[1-9]$/.test(e.code) ? Number(e.code.slice(5)) : EXTRA_EMOTE_KEYS[e.code];
+        const slot = this._emoteKeys[e.code] ?? (/^Digit[1-9]$/.test(e.code) ? Number(e.code.slice(5)) : undefined);
         if (slot) events.emit('webgl_character_emote', slot);
       }
     }
   };
+
+  /** Emote key labels in slot order (slot n = keys[n - 1]). */
+  setEmoteKeys(keys: readonly string[]) {
+    const reserved = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE']);
+    this._emoteKeys = {};
+    keys.forEach((key, i) => {
+      if (!key) return; // menu only
+      const code = keyCode(key);
+      if (!reserved.has(code)) this._emoteKeys[code] = i + 1;
+    });
+  }
 
   /** Move-force multiplier while sprinting (1 = sprint disabled). */
   setSprintMultiplier(multiplier: number) {

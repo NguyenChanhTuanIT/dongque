@@ -22,7 +22,7 @@ import {
 } from 'three';
 import { ticker } from '../core/ticker';
 import type { CharacterLocal } from '../engine/characters';
-import { BONE, ICECREAM_STATE, KITE_STATE } from './emotes';
+import { BONE, ICECREAM_STATE, KITE_STATE, OFFER_ICECREAM_STATE, TREAT_ICECREAM_STATE } from './emotes';
 
 const MAX = 128;
 const TAIL_BOWS = 4;
@@ -106,7 +106,8 @@ export class HandProps {
   pose = (character: CharacterLocal, i: number, bones: Bone[], stateWeight: (state: number) => number) => {
     if (i >= MAX) return;
     const kiteW = stateWeight(KITE_STATE);
-    const creamW = stateWeight(ICECREAM_STATE);
+    // own ice cream, one held out to someone, one we were treated to
+    const creamW = stateWeight(ICECREAM_STATE) + stateWeight(OFFER_ICECREAM_STATE) + stateWeight(TREAT_ICECREAM_STATE);
     const scale = character.scale.x;
     if (kiteW > 0.35 || creamW > 0.35) {
       this._hand.setFromMatrixPosition(bones[BONE.rightHand].matrixWorld).applyMatrix4(character.matrix);

@@ -415,7 +415,7 @@ export function createUserPages(deps: UserPagesDeps) {
         stat('Đang online', String(players.length)),
         stat('Phòng', String(byRoom.size)),
         stat('Có tài khoản', String(accounts)),
-        stat('Khách', String(players.length - accounts)),
+        stat('Ẩn danh', String(players.length - accounts)),
       );
 
       const shown = players.filter((p) => !room || p.room === room).sort((a, b) => a.connectedAt - b.connectedAt);
@@ -428,7 +428,7 @@ export function createUserPages(deps: UserPagesDeps) {
         ['Người chơi', 'Tài khoản', 'Phòng', 'Online', 'Vị trí (x, z)', ''],
         shown.map((p) => {
           const account = p.uid ? rows?.get(p.uid) : undefined;
-          const label = p.name || `Khách #${p.id}`;
+          const label = p.name || `Người dùng ẩn danh #${p.id}`;
           const actions = el('div', { className: 'row-actions' }, [
             button('Kick', () => void kick({ id: p.id }, label).then((ok) => { if (ok) void refresh(); })),
             ...(account?.hasProfile && !account.banned && p.uid !== me.uid
@@ -443,7 +443,7 @@ export function createUserPages(deps: UserPagesDeps) {
                   ...(account?.banned ? [badge('Bị khoá', 'danger')] : []),
                   small(p.uid),
                 ])]
-              : [small('Khách')]),
+              : [small('Ẩn danh')]),
             td([p.room]),
             td([duration(now - p.connectedAt)], 'nowrap'),
             td([`${p.x}, ${p.z}`], 'nowrap mono'),
