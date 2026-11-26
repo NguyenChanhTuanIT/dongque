@@ -1,0 +1,54 @@
+{
+  "$comment": "Shop catalog shared by the game (src/shop/catalog.ts) and the relay (server/shop.mjs). Slot order and the order of each slot's items are the wire format (one byte per slot = item index): only append, never reorder. Prices live in the admin config (config/scene → shop.items), default 1 flower. free = everyone has it (not sold). emote = network animation state the item unlocks (src/scene/emotes.ts).",
+  "categories": [
+    { "id": "outfit", "label": "Trang phục" },
+    { "id": "shoes", "label": "Giày dép" },
+    { "id": "accessory", "label": "Phụ kiện" },
+    { "id": "picnic", "label": "Đồ dã ngoại" }
+  ],
+  "slots": [
+    { "id": "hat", "label": "Mũ", "items": ["hat.none", "hat.straw", "hat.cap"] },
+    { "id": "hair", "label": "Kiểu tóc", "items": ["hair.default", "hair.pigtails", "hair.ponytail", "hair.bob"] },
+    { "id": "top", "label": "Áo", "items": ["top.tshirt", "top.blue", "top.pink"] },
+    { "id": "bottom", "label": "Quần / váy", "items": ["bottom.shorts", "bottom.skirt", "bottom.jeans"] },
+    { "id": "shoes", "label": "Giày dép", "items": ["shoes.sandals", "shoes.barefoot", "shoes.sneakers", "shoes.canvas"] },
+    { "id": "glasses", "label": "Kính", "items": ["glasses.none", "glasses.sun", "glasses.round"] },
+    { "id": "necklace", "label": "Dây chuyền", "items": ["necklace.none", "necklace.shell", "necklace.lei"] }
+  ],
+  "items": [
+    { "id": "hat.none", "label": "Không", "free": true },
+    { "id": "hat.straw", "label": "Mũ rơm", "category": "accessory", "icon": "👒" },
+    { "id": "hat.cap", "label": "Mũ lưỡi trai", "category": "accessory", "icon": "🧢" },
+
+    { "id": "hair.default", "label": "Mặc định", "free": true },
+    { "id": "hair.pigtails", "label": "Hai bím", "free": true },
+    { "id": "hair.ponytail", "label": "Đuôi ngựa", "free": true },
+    { "id": "hair.bob", "label": "Ngang vai", "free": true },
+
+    { "id": "top.tshirt", "label": "Áo phông", "free": true },
+    { "id": "top.blue", "label": "Áo xanh biển", "category": "outfit", "icon": "👕" },
+    { "id": "top.pink", "label": "Áo hồng", "category": "outfit", "icon": "👚" },
+
+    { "id": "bottom.shorts", "label": "Quần short", "free": true },
+    { "id": "bottom.skirt", "label": "Váy xoè", "free": true },
+    { "id": "bottom.jeans", "label": "Quần jean", "category": "outfit", "icon": "👖" },
+
+    { "id": "shoes.sandals", "label": "Dép", "free": true },
+    { "id": "shoes.barefoot", "label": "Chân đất", "free": true },
+    { "id": "shoes.sneakers", "label": "Giày thể thao", "category": "shoes", "icon": "👟" },
+    { "id": "shoes.canvas", "label": "Giày vải đỏ", "category": "shoes", "icon": "🥿" },
+
+    { "id": "glasses.none", "label": "Không", "free": true },
+    { "id": "glasses.sun", "label": "Kính râm", "category": "accessory", "icon": "🕶️" },
+    { "id": "glasses.round", "label": "Kính tròn", "category": "accessory", "icon": "👓" },
+
+    { "id": "necklace.none", "label": "Không", "free": true },
+    { "id": "necklace.shell", "label": "Dây chuyền vỏ sò", "category": "accessory", "icon": "🐚" },
+    { "id": "necklace.lei", "label": "Vòng hoa", "category": "accessory", "icon": "🌺" },
+
+    { "id": "picnic.fishing", "label": "Cần câu", "category": "picnic", "icon": "🎣", "emote": 7 },
+    { "id": "picnic.guitar", "label": "Đàn guitar", "category": "picnic", "icon": "🎸", "emote": 10 },
+    { "id": "picnic.kite", "label": "Diều", "category": "picnic", "icon": "🪁", "emote": 11 },
+    { "id": "picnic.icecream", "label": "Kem", "category": "picnic", "icon": "🍦", "emote": 12 }
+  ]
+}

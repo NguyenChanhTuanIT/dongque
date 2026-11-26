@@ -5,7 +5,9 @@
 // 3 LEAVE [u32 id] · 4 OUTFIT · 5 NAME [u32 id][u8 n][name] · 6 CHAT [u32 id][text]
 // · 7 NOTICE [u8 code]. Close codes 4001 (kicked) / 4003 (banned) stop reconnecting.
 // Client → server: one 26-byte state frame, or
-// [2] OUTFIT · [3] PROFILE [u16 n][ID token][u8 m][name] · [4] CHAT [text].
+// [2] OUTFIT · [3] PROFILE [u16 n][ID token][u8 m][name] · [4] CHAT [text]
+// · [5] REWARD · [6] VISIBLE · [7] SHOP [JSON]. An OUTFIT with our own id is the
+// relay correcting / restoring our outfit (shop ownership, account outfit).
 
 import { STATE_BYTES, decodeState, encodeState } from './codec';
 import type { ConnectionOptions, MultiplayerConnection, P2PClientData, P2PData } from './types';
@@ -23,6 +25,7 @@ const CLIENT_PROFILE = 3;
 const CLIENT_CHAT = 4;
 const CLIENT_REWARD = 5;
 const CLIENT_VISIBLE = 6;
+const CLIENT_SHOP = 7;
 /** REWARD actions (server/realm.mjs): 2 + i claims online tier i. */
 export const REWARD_STATUS = 0;
 export const REWARD_CHECKIN = 1;
@@ -76,6 +79,8 @@ export interface SocketConnectionOptions extends ConnectionOptions {
   onNotice?: (code: number) => void;
   /** Flowers + daily rewards of the signed-in account (null = not signed in), see server/wallets.mjs. */
   onWallet?: (wallet: unknown) => void;
+  /** The relay set our outfit (item index per slot): items we do not own removed, or the account's saved outfit. */
+  onOwnOutfit?: (outfit: number[]) => void;
   /** An admin removed us (CLOSE_KICKED / CLOSE_BANNED); the connection stays closed. */
   onKicked?: (code: number) => void;
 }
@@ -97,6 +102,7 @@ export class SocketConnection implements MultiplayerConnection {
   private _onChat: (id: string, text: string) => void;
   private _onNotice: (code: number) => void;
   private _onWallet: (wallet: unknown) => void;
+  private _onOwnOutfit: (outfit: number[]) => void;
   private _onLeave: (id: string) => void;
   private _onKicked: (code: number) => void;
   private _prevPayload = '';
@@ -123,6 +129,7 @@ export class SocketConnection implements MultiplayerConnection {
     this._onChat = options.onChat ?? noop;
     this._onNotice = options.onNotice ?? noop;
     this._onWallet = options.onWallet ?? noop;
+    this._onOwnOutfit = options.onOwnOutfit ?? noop;
     this._onLeave = options.onLeave ?? noop;
     this._onKicked = options.onKicked ?? noop;
     const url = new URL(options.url);
@@ -210,6 +217,10 @@ export class SocketConnection implements MultiplayerConnection {
         const id = String(view.getUint32(1, true));
         const n = Math.min(view.getUint8(5), view.byteLength - 6, MAX_OUTFIT_SLOTS);
         const outfit = Array.from({ length: n }, (_, i) => view.getUint8(6 + i));
+        if (id === this._selfId) {
+          this._onOwnOutfit(outfit);
+          return;
+        }
         this._outfits.set(id, outfit);
         const existing = this._clients.get(id);
         if (existing) existing.outfit = outfit;
@@ -260,6 +271,18 @@ export class SocketConnection implements MultiplayerConnection {
     const ws = this._ws;
     if (!ws || ws.readyState !== WebSocket.OPEN || !this._selfId) return false;
     ws.send(new Uint8Array([CLIENT_REWARD, action]));
+    return true;
+  }
+
+  /** Buy a shop item at the price we show; false while offline. The answer is a WALLET with a `shop` result. */
+  sendShop(item: string, price: number): boolean {
+    const ws = this._ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN || !this._selfId) return false;
+    const bytes = encoder.encode(JSON.stringify({ buy: item, price }));
+    const msg = new Uint8Array(1 + bytes.length);
+    msg[0] = CLIENT_SHOP;
+    msg.set(bytes, 1);
+    ws.send(msg);
     return true;
   }
 

@@ -15,6 +15,12 @@
 //   client → server   [2] OUTFIT · [3] PROFILE [u16 n][Firebase ID token][u8 m][name] (n = m = 0: sign out)
 //                     · [4] CHAT [UTF-8 text] · [5] REWARD [u8 action] (0 status, 1 check-in, 2-4 online tier 0-2)
 //                     · [6] VISIBLE [u8 0|1] (game tab shown / hidden: online rewards only count while shown)
+//                     · [7] SHOP [UTF-8 JSON {"buy": itemId, "price": n}] (price = what the buyer saw)
+//   OUTFIT is checked against the shop (server/shop.mjs): items the account does
+//   not own are shown as the slot default, and the sender gets the corrected
+//   outfit back ([4] with its own id). Signed-in accounts keep their outfit in
+//   the wallet; signing in loads it. Emote states of unowned picnic items
+//   (fishing rod, guitar, kite, ice cream) are relayed as standing.
 //   A PROFILE with a token and no name (m = 0) only signs in (rewards), keeping the guest name.
 //
 // Clients send whenever their state changes (plus a slow heartbeat); the
@@ -26,6 +32,7 @@ import nodePath from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTokenVerifier } from './firebase-auth.mjs';
 import { createWallets } from './wallets.mjs';
+import { createPriceBook, loadCatalog } from './shop.mjs';
 
 export const STATE_BYTES = 26;
 export const STATE_VERSION = 1;
@@ -42,6 +49,7 @@ const CLIENT_PROFILE = 3;
 const CLIENT_CHAT = 4;
 const CLIENT_REWARD = 5;
 const CLIENT_VISIBLE = 6;
+const CLIENT_SHOP = 7;
 const REWARD_STATUS = 0;
 const REWARD_CHECKIN = 1;
 const REWARD_ONLINE = 2; // 2, 3, 4 = online tier 0, 1, 2
@@ -75,8 +83,9 @@ const ROOM_NAME = /^[a-z0-9_-]{1,32}$/i;
 const MAX_ABS_COORD = 10_000;
 /** Highest animation state: 0 ground, 1 airborne, 2 bored, 3 wave, 4 clap, 5 dance,
  *  6 sit cross-legged, 7 fishing, 8 lying prone, 9 sunbathing, 10 guitar,
- *  11 kite, 12 ice cream, 13 high five (see src/scene/emotes.ts). */
-const MAX_ANIM_STATE = 13;
+ *  11 kite, 12 ice cream, 13 high five, 14 walking a dog, 15 walking a cat
+ *  (see src/scene/emotes.ts; 15 fills the 4-bit field). */
+const MAX_ANIM_STATE = 15;
 
 /**
  * @typedef {object} RealmOptions
@@ -107,6 +116,9 @@ export function createRealm(options = {}) {
     log = (msg) => console.log(`[realm] ${msg}`),
   } = options;
   const wallets = createWallets({ file: nodePath.join(dataDir, 'wallets.json'), timeZone });
+  const catalog = loadCatalog();
+  const prices = createPriceBook({ projectId: firebaseProjectId, ids: catalog.forSale.map((it) => it.id) });
+  prices.warm();
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD, perMessageDeflate: false });
   const verifyToken = firebaseProjectId ? createTokenVerifier(firebaseProjectId) : null;
@@ -152,6 +164,8 @@ export function createRealm(options = {}) {
    * @property {string} room
    * @property {Uint8Array | null} state  latest valid frame
    * @property {Buffer | null} outfit  latest OUTFIT broadcast for this player
+   * @property {Uint8Array | null} wanted  outfit the client asked for (before the ownership check)
+   * @property {boolean} shopPending  a purchase is being checked
  * @property {Buffer | null} name  latest NAME broadcast for this player (null = guest)
  * @property {string} uid  Firebase uid once signed in (email/password)
  * @property {boolean} visible  game tab shown (client-reported)
@@ -249,6 +263,73 @@ export function createRealm(options = {}) {
     player.uid = uid;
     refreshOnline(old);
     refreshOnline(uid);
+    // Outfit: signing in puts on the account's saved outfit (or saves the
+    // current one the first time); signing out takes off bought items.
+    const saved = uid ? wallets.getOutfit(uid) : null;
+    if (saved) {
+      player.wanted = catalog.outfitBytes(saved);
+      applyOutfit(player, { echo: true });
+    } else {
+      applyOutfit(player, { save: !!uid });
+    }
+  }
+
+  /**
+   * Show `player.wanted` to the room, minus the items the account cannot wear.
+   * The player gets the result back when it differs from what it asked for
+   * (or always with `echo`); `save` stores it as the account's outfit.
+   */
+  function applyOutfit(player, { save = false, echo = false } = {}) {
+    const room = rooms.get(player.room);
+    if (!player.wanted || !room?.players.has(player)) return;
+    const wanted = player.wanted;
+    const shown = catalog.filterOutfit(wanted, (id) => wallets.owns(player.uid, id));
+    const msg = Buffer.alloc(6 + shown.length);
+    msg.writeUInt8(MSG_OUTFIT, 0);
+    msg.writeUInt32LE(player.id, 1);
+    msg.writeUInt8(shown.length, 5);
+    msg.set(shown, 6);
+    const changed = !player.outfit || !player.outfit.equals(msg);
+    player.outfit = msg;
+    if (changed) for (const p of room.players) if (p !== player) send(p.ws, msg);
+    if (echo || shown.some((v, s) => v !== (wanted[s] ?? 0))) send(player.ws, msg);
+    if (save && player.uid) wallets.setOutfit(player.uid, catalog.outfitIds(shown));
+  }
+
+  /** Buy a shop item: [7][{"buy": id, "price": n}] → WALLET with a `shop` result. */
+  async function onShop(player, buf) {
+    let request;
+    try {
+      request = JSON.parse(buf.subarray(1).toString('utf8'));
+    } catch {
+      return;
+    }
+    const id = typeof request?.buy === 'string' ? request.buy.slice(0, 64) : '';
+    const seen = Number.isInteger(request?.price) ? request.price : -1;
+    const uid = player.uid;
+    const reply = (result) => {
+      for (const p of uid ? sessionsOf(uid) : [player]) sendWallet(p, p === player ? { shop: true, item: id, ...result } : undefined);
+    };
+    if (!uid) return reply({ ok: false, error: 'login' });
+    const item = catalog.items.get(id);
+    if (!item || item.free || !item.category) return reply({ ok: false, error: 'item' });
+    if (wallets.owns(uid, id)) return reply({ ok: false, error: 'owned' });
+    if (player.shopPending) return;
+    player.shopPending = true;
+    let offer;
+    try {
+      offer = await prices.get(id);
+      // The buyer saw another price: maybe the admin just changed it, check again.
+      if (offer && offer.price !== seen) offer = await prices.get(id, true);
+    } finally {
+      player.shopPending = false;
+    }
+    if (player.uid !== uid) return; // signed out meanwhile
+    if (!offer || !offer.enabled) return reply({ ok: false, error: 'disabled' });
+    if (offer.price !== seen) return reply({ ok: false, error: 'price', price: offer.price });
+    const result = wallets.buy(uid, id, offer.price);
+    if (result.ok) log(`${uid} bought ${id} for ${offer.price}`);
+    reply(result);
   }
 
   function onReward(player, buf) {
@@ -366,6 +447,9 @@ export function createRealm(options = {}) {
       room: roomName,
       state: null,
       outfit: null,
+      /** Outfit the client asked for (item index per slot); `outfit` is what others see. */
+      wanted: null,
+      shopPending: false,
       name: null,
       nameText: '',
       uid: '',
@@ -418,13 +502,8 @@ export function createRealm(options = {}) {
         const n = buf[1];
         if (buf.length !== 2 + n || n > MAX_OUTFIT_SLOTS) return;
         for (let i = 0; i < n; i++) if (buf[2 + i] > MAX_OUTFIT_ITEM) return;
-        const msg = Buffer.alloc(6 + n);
-        msg.writeUInt8(MSG_OUTFIT, 0);
-        msg.writeUInt32LE(player.id, 1);
-        msg.writeUInt8(n, 5);
-        buf.copy(msg, 6, 2, 2 + n);
-        player.outfit = msg;
-        for (const p of room.players) if (p !== player) send(p.ws, msg);
+        player.wanted = Uint8Array.from(buf.subarray(2, 2 + n));
+        applyOutfit(player, { save: true });
         return;
       }
       if (buf[0] === CLIENT_PROFILE) {
@@ -439,6 +518,10 @@ export function createRealm(options = {}) {
         onReward(player, buf);
         return;
       }
+      if (buf[0] === CLIENT_SHOP) {
+        void onShop(player, buf).catch((err) => log(`#${player.id} shop failed: ${err instanceof Error ? err.message : err}`));
+        return;
+      }
       if (buf[0] === CLIENT_VISIBLE) {
         if (buf.length !== 2) return;
         const visible = buf[1] === 1;
@@ -450,6 +533,9 @@ export function createRealm(options = {}) {
       }
       if (!isValidState(buf)) return;
       player.state = Uint8Array.from(buf);
+      // Picnic emotes need their item: relay a standing pose otherwise.
+      const needs = catalog.emoteItems.get(player.state[21] & 0x0f);
+      if (needs && !wallets.owns(player.uid, needs)) player.state[21] &= 0xf0;
       player.x = buf.readFloatLE(1);
       player.z = buf.readFloatLE(9);
       room.dirty.add(player);

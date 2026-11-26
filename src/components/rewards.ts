@@ -7,6 +7,7 @@
 import { events } from '../core/events';
 import { REWARD_CHECKIN, REWARD_ONLINE, REWARD_STATUS } from '../engine/multiplayer/socket';
 import { isConnected } from '../social/presence';
+import { addPanelBar } from './panelBar';
 
 interface WalletStatus {
   flowers: number;
@@ -20,7 +21,8 @@ interface WalletStatus {
   stageSec: number;
   counting: boolean;
   tiers: Array<{ minutes: number; flowers: number; claimed: boolean }>;
-  result?: { action: number; ok: boolean; flowers?: number; error?: string };
+  /** Answer to this tab's request (shop answers carry `shop: true`, see shop.ts). */
+  result?: { action: number; ok: boolean; flowers?: number; error?: string; shop?: boolean };
 }
 
 export const flowerIcon =
@@ -37,6 +39,8 @@ const flowers = (n: number) => `${n} 🌸`;
 
 export class RewardsPanel {
   private readonly panel: HTMLDivElement;
+  /** Rebuilt on render; the title bar above it stays. */
+  private readonly content: HTMLDivElement;
   private readonly badge: HTMLSpanElement;
   private wallet: WalletStatus | null = null;
   /** performance.now() when `wallet` arrived (online time keeps running locally). */
@@ -57,6 +61,7 @@ export class RewardsPanel {
     this.panel.setAttribute('role', 'dialog');
     this.panel.setAttribute('aria-label', 'Quà mỗi ngày');
     nav.append(this.panel);
+    this.content = addPanelBar(this.panel, 'Quà mỗi ngày', () => this.setOpen(false));
 
     button.setAttribute('aria-haspopup', 'dialog');
     button.addEventListener('click', () => this.setOpen(!this.panel.classList.contains('open')));
@@ -79,7 +84,7 @@ export class RewardsPanel {
     events.on('mp_wallet', (wallet: WalletStatus | null) => {
       this.wallet = wallet;
       this.receivedAt = performance.now();
-      if (wallet?.result) this.showResult(wallet.result);
+      if (wallet?.result && !wallet.result.shop) this.showResult(wallet.result);
       this.render();
     });
     events.on('mp_connected', () => this.render());
@@ -119,13 +124,13 @@ export class RewardsPanel {
     if (!this.panel.classList.contains('open')) return;
     // Rebuilt only when something shown changed (a rebuild mid-click would eat the click).
     const html = this.buildHtml(w, sec, ready);
-    if (html !== this.html) this.panel.innerHTML = this.html = html;
+    if (html !== this.html) this.content.innerHTML = this.html = html;
   }
 
   private buildHtml(w: WalletStatus | null, sec: number, ready: boolean): string {
     if (!w) {
       return (
-        '<div class="look-group"><span>Quà mỗi ngày</span><p class="rewards-note">' +
+        '<div class="look-group"><p class="rewards-note">' +
         (isConnected()
           ? 'Đăng nhập để điểm danh và nhận hoa mỗi ngày.</p><button type="button" class="primary" data-login>Đăng nhập</button>'
           : 'Đang kết nối máy chủ…</p>') +
@@ -172,7 +177,7 @@ export class RewardsPanel {
         <ol class="rewards-week rewards-steps">${steps}</ol>
         ${current}
       </div>
-      <p class="rewards-note">Hoa dùng để mua phụ kiện: quần áo, kính, giày, cần câu, diều, kem… (sắp có)</p>
+      <p class="rewards-note">Hoa dùng để mua quần áo, giày, kính, dây chuyền, cần câu, diều, kem… ở Cửa hàng 🎒</p>
       <p class="rewards-toast" aria-live="polite">${toast}</p>`;
   }
 

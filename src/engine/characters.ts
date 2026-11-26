@@ -304,6 +304,8 @@ export class Characters extends CharacterSkinnedMesh {
   private _inactiveTime: number;
   private _inactiveMilliseconds = 0;
   private _emoteSlots: number[] = [2];
+  /** Whether the local player may start emote state `state` (picnic items are bought in the shop). */
+  emoteAllowed: (state: number) => boolean = () => true;
   private _emoteDurations: Record<number, number> = {};
   private _emoteUntil = 0;
   private _mobileEmotes = new Set<number>();
@@ -367,6 +369,7 @@ export class Characters extends CharacterSkinnedMesh {
     events.on('webgl_character_emote', this._toggleEmote);
     events.on('mp_send_chat', this._sendChat);
     events.on('mp_reward', this._sendReward);
+    events.on('mp_shop_buy', this._sendShop);
     events.on('mp_profile', this._setProfile);
     this._collisionPhysics = new CollisionPhysics(this as unknown as CharacterInstance, {
       colliderMesh: options.colliderMesh,
@@ -407,6 +410,7 @@ export class Characters extends CharacterSkinnedMesh {
             onChat: (id, text) => events.emit('mp_chat', charId(id), text),
             onNotice: (code) => events.emit('mp_notice', code),
             onWallet: (wallet) => events.emit('mp_wallet', wallet),
+            onOwnOutfit: (outfit) => events.emit('mp_own_outfit', outfit),
             onKicked: (code) => events.emit('mp_kicked', code),
           });
         });
@@ -546,6 +550,10 @@ export class Characters extends CharacterSkinnedMesh {
     done?.(this._connection?.sendReward?.(action) ?? false);
   };
 
+  private _sendShop = (item: string, price: number, done?: (sent: boolean) => void) => {
+    done?.(this._connection?.sendShop?.(item, price) ?? false);
+  };
+
   private _sendChat = (text: string, done?: (sent: boolean) => void) => {
     done?.(this._connection?.sendChat?.(text) ?? false);
   };
@@ -638,6 +646,10 @@ export class Characters extends CharacterSkinnedMesh {
     if (!this._collisionPhysics.collider) return;
     const state = this._emoteSlots[slot - 1];
     if (state === undefined) return;
+    if (local.userData.a !== state && !this.emoteAllowed(state)) {
+      events.emit('webgl_emote_locked', state);
+      return;
+    }
     if (local.userData.a === state) {
       local.userData.a = 0;
       this._emoteUntil = 0;

@@ -13,7 +13,7 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin()
         && request.resource.data.keys().hasOnly(
-             ['ui', 'features', 'player', 'audio', 'lighting', 'terrain', 'secrets', 'updatedAt', 'updatedBy']);
+             ['ui', 'features', 'player', 'audio', 'lighting', 'terrain', 'secrets', 'shop', 'updatedAt', 'updatedBy']);
     }
 
     // Admin allow-list (document id = Firebase Auth uid). A signed-in user may

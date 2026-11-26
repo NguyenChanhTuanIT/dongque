@@ -2,6 +2,8 @@
 // its defaults (the values the scene shipped with), and a tolerant merge that
 // keeps defaults for any field that is missing or has the wrong type.
 
+import { DEFAULT_PRICE, SHOP_ITEMS } from '../shop/catalog';
+
 export type Vec3 = [number, number, number];
 
 /** Scene modules that can be switched off (reload required). */
@@ -78,6 +80,17 @@ export interface SceneConfig {
     grassColor2: string;
   };
   secrets: Record<SecretPiece, SecretPieceConfig>;
+  /** Shop (src/shop/catalog.ts): price in flowers and on/off per item id. */
+  shop: {
+    items: Record<string, ShopItemConfig>;
+  };
+}
+
+export interface ShopItemConfig {
+  /** Whole flowers; 0 = free to claim. */
+  price: number;
+  /** false = no longer sold (owners keep it). */
+  enabled: boolean;
 }
 
 export const DEFAULT_CONFIG: SceneConfig = {
@@ -156,6 +169,9 @@ export const DEFAULT_CONFIG: SceneConfig = {
       rotation: [0, -87.0408, 0],
       scale: 1,
     },
+  },
+  shop: {
+    items: Object.fromEntries(SHOP_ITEMS.map((it) => [it.id, { price: DEFAULT_PRICE, enabled: true }])),
   },
 };
 

@@ -3,9 +3,10 @@
 // boot (players see them after reloading the page); the rest apply live.
 
 import { SECRET_PIECES, TOGGLEABLE_MODULES } from '../config/schema';
+import { CATEGORIES, SHOP_ITEMS } from '../shop/catalog';
 import type { IconName } from './icons';
 
-export type FieldKind = 'text' | 'multiline' | 'paragraphs' | 'number' | 'color' | 'bool' | 'vec3';
+export type FieldKind = 'text' | 'multiline' | 'paragraphs' | 'number' | 'color' | 'bool' | 'vec3' | 'shopItem';
 
 export interface Field {
   path: string;
@@ -16,6 +17,8 @@ export interface Field {
   max?: number;
   reload?: boolean;
   hint?: string;
+  /** shopItem: emoji shown before the label. */
+  icon?: string;
 }
 
 export interface Section {
@@ -139,6 +142,21 @@ export const SECTIONS: Section[] = [
       { path: 'features.npcs.kiteFlyers', label: 'Hai bạn thả diều trên bãi biển', kind: 'bool' },
       { path: 'features.npcs.guitarist', label: 'Bạn đàn hát cuối con đường', kind: 'bool' },
     ],
+  },
+  {
+    id: 'shop',
+    group: 'Cấu hình chung',
+    icon: 'bag',
+    title: 'Cửa hàng',
+    description:
+      'Giá (số hoa 🌸) và trạng thái bán của từng món. 0 = nhận miễn phí. Tắt "Đang bán" thì món biến khỏi cửa hàng, người đã mua vẫn giữ. Đổi giá không ảnh hưởng đồ đã mua; server áp dụng giá mới trong vòng 30 giây.',
+    fields: SHOP_ITEMS.map((it): Field => ({
+      path: `shop.items.${it.id}`,
+      label: it.label,
+      kind: 'shopItem',
+      icon: it.icon,
+      hint: `${CATEGORIES.find((c) => c.id === it.category)?.label ?? ''} · ${it.id}`,
+    })),
   },
   {
     id: 'features',

@@ -38,6 +38,7 @@ export interface MultiplayerConnection {
   readonly selfId?: string;
   sendChat?(text: string): boolean;
   sendReward?(action: number): boolean;
+  sendShop?(item: string, price: number): boolean;
   _sendProfile?(profile: import('./socket').Profile | null): Promise<void>;
   _dispose(): void;
 }

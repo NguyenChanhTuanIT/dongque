@@ -41,12 +41,17 @@ export const EMOTES = [
   { id: 'kite', label: 'Thả diều', key: '0', state: 11, duration: 0 },
   { id: 'icecream', label: 'Ăn kem', key: 'Q', state: 12, duration: 0 },
   { id: 'highfive', label: 'Đập tay', key: 'H', state: 13, duration: 5 },
+  { id: 'dog', label: 'Dắt chó', key: 'C', state: 14, duration: 0 },
+  { id: 'cat', label: 'Dắt mèo', key: 'M', state: 15, duration: 0 },
 ] as const;
 export const FISH_STATE = 7;
 export const GUITAR_STATE = 10;
 export const KITE_STATE = 11;
 export const ICECREAM_STATE = 12;
 export const HIGHFIVE_STATE = 13;
+/** Walking a pet (scene/pets.ts draws the dog / cat and the leash). */
+export const DOG_STATE = 14;
+export const CAT_STATE = 15;
 /** Slot (1-based, menu / keys) of the high-five. */
 export const HIGHFIVE_SLOT = EMOTES.findIndex((e) => e.id === 'highfive') + 1;
 
@@ -222,16 +227,17 @@ function buildMovingClip(name: string, rest: Rest, run: AnimationClip, loops: nu
  * by side on the sand; one holds the partner (on its right) by the waist, the
  * other just sits, hands on the knees.
  */
-export const NPC_STATES = { sitHoldWaist: 14, sitRelaxed: 15 } as const;
+export const NPC_STATES = { sitHoldWaist: 20, sitRelaxed: 21 } as const; // local only: beyond the 4-bit network range
 
 /** Emotes that keep playing while the player walks (upper body only). */
-export const MOBILE_EMOTE_STATES = [10, 11, 12]; // guitar, kite, ice cream
+export const MOBILE_EMOTE_STATES = [10, 11, 12, 14, 15]; // guitar, kite, ice cream, dog, cat
 
 const TAU = Math.PI * 2;
 const v = (x: number, y: number, z: number) => new Vector3(x, y, z);
 const lerpDir = (a: Vector3, b: Vector3, t: number) => a.clone().lerp(b, t).normalize();
 const aroundX = (angle: number) => new Quaternion().setFromAxisAngle(v(1, 0, 0), angle);
 const aroundZ = (angle: number) => new Quaternion().setFromAxisAngle(v(0, 0, 1), angle);
+const aroundY = (angle: number) => new Quaternion().setFromAxisAngle(v(0, 1, 0), angle);
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
 // ---------------------------------------------------------------------------
@@ -430,6 +436,18 @@ export function createEmoteClips(skinned: SkinnedMesh, idle: AnimationClip, run:
     return f;
   });
 
+  // 14 / 15 Walking a pet: right hand low and forward holding the leash,
+  // a small tug now and then.
+  const leashFrame = (t: number): Frame => {
+    const f: Frame = { quats: new Map() };
+    const tug = Math.max(0, Math.sin(t * TAU)) ** 4;
+    aimChain(f, rest, ARM(RIGHT_ARM), [v(-0.32, -0.8, 0.5 + 0.1 * tug), v(-0.25, -0.3 + 0.15 * tug, 0.92)]);
+    turnBone(f, rest, NECK, aroundX(0.18).multiply(aroundY(-0.25))); // glance down at the pet
+    return f;
+  };
+  const walkDog = buildClip('emote-walk-dog', rest, 2.5, 20, leashFrame);
+  const walkCat = buildClip('emote-walk-cat', rest, 2.5, 20, leashFrame);
+
   // While walking: upper body from the emote, legs from the run cycle
   // (kite: the free left arm swings too; ice cream: same).
   const moving = [
@@ -441,6 +459,8 @@ export function createEmoteClips(skinned: SkinnedMesh, idle: AnimationClip, run:
       return f;
     }) },
     { state: 12, clip: buildMovingClip('emote-icecream-walk', rest, run, 4, iceCreamFrame) },
+    { state: DOG_STATE, clip: buildMovingClip('emote-walk-dog-walk', rest, run, 3, leashFrame) },
+    { state: CAT_STATE, clip: buildMovingClip('emote-walk-cat-walk', rest, run, 3, leashFrame) },
   ];
 
   // NPC: sitting on the sand, knees up.
@@ -478,5 +498,5 @@ export function createEmoteClips(skinned: SkinnedMesh, idle: AnimationClip, run:
     { state: NPC_STATES.sitRelaxed, clip: buildClip('npc-sit-relaxed', rest, 4, 16, sitRelaxed) },
   ];
 
-  return { clips: [wave, clap, dance, sit, fish, prone, sunbathe, guitar, kite, iceCream, highFive], moving, npc };
+  return { clips: [wave, clap, dance, sit, fish, prone, sunbathe, guitar, kite, iceCream, highFive, walkDog, walkCat], moving, npc };
 }

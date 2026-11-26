@@ -37,18 +37,21 @@ npm run typecheck  # tsc -b --noEmit
 | Sprint | hold `Shift` | push the joystick to the rim | RB / R1 or L3 |
 | Jump | `Space`, or quick right-click | tap | A / ✕ |
 | Chat (whole room) | `Enter` to open, `Enter` to send, `Esc` to close | chat button | — |
-| Emote | `E` wave · `1` wave · `2` clap · `3` dance · `4` bored · `5` sit cross-legged · `6` fishing · `7` lie on the belly · `8` sunbathe · `9` guitar · `0` kite · `Q` ice cream · `H` high five, or the smiley button menu | smiley button menu | Y / △ (wave) |
+| Emote | `E` wave · `1` wave · `2` clap · `3` dance · `4` bored · `5` sit cross-legged · `6` fishing · `7` lie on the belly · `8` sunbathe · `9` guitar · `0` kite · `Q` ice cream · `H` high five · `C` walk a dog · `M` walk a cat, or the smiley button menu | smiley button menu | Y / △ (wave) |
 
 Wave and clap stop after 3 s; the others last until you move (pressing the
-same emote again also stops it) — except guitar, kite and ice cream, which keep
-playing while you walk (upper body from the emote, legs from the run cycle).
+same emote again also stops it) — except guitar, kite, ice cream and walking a pet,
+which keep playing while you walk (upper body from the emote, legs from the run cycle).
+Fishing (`6`), guitar (`9`), kite (`0`) and ice cream (`Q`) need their item
+from the shop (🔒 in the menu until bought; pressing the key opens the shop).
 High five (`H`) turns you toward the nearest player and raises a hand; when two
 raised hands are close, both clients show a 👏 burst. Emotes and sprinting are visible to other
 players. Wave, clap, dance, sit, fishing, lying prone and sunbathing are generated in
 code from the idle pose (`src/scene/emotes.ts`), so no extra animation assets are needed; the
 fishing rod, line, bobber and fish are small instanced props that follow each
 character's right hand (`src/scene/fishing.ts`); the guitar sits in front of the
-belly with its neck in the left hand (`src/scene/guitar.ts`).
+belly with its neck in the left hand (`src/scene/guitar.ts`). The dog / cat (`src/scene/pets.ts`)
+is a low-poly pet that follows its owner on a leash, legs stepping with its speed.
 
 ## NPCs
 
@@ -74,28 +77,39 @@ but use ids prefixed `npc:`; they are excluded from `forEachCharacter`
 
 The person button opens the picker: **Nam / Nữ** presets plus one row per
 equipment slot — Mũ (hat), Kiểu tóc (hair), Áo (top), Quần / váy (bottom),
-Dép (shoes), Kính (glasses). Choices apply live, are remembered per device
-(`localStorage`) and are visible to other players.
+Giày dép (shoes), Kính (glasses), Dây chuyền (necklace). Choices apply live and
+are visible to other players. Items sold in the shop show 🔒 until bought
+(clicking one opens the shop on it). Signed-in players' outfits are kept by the
+relay per account (any device); guests' only on that device (`localStorage`).
 
 How it works (`src/scene/appearance.ts`):
 
 - Every vertex of the kid mesh belongs to a **part** (hat, t-shirt, shorts,
   sandals… split from the original mesh by color; skirt, hairstyles, hair cap,
-  bare feet, sunglasses generated in code and skinned to the same bones).
-- An **item** is a list of parts; `SLOTS` is the catalog. Each character gets a
+  bare feet, glasses, cap, recolored shirts / jeans / shoes, necklaces
+  generated in code and skinned to the same bones).
+- Shop items use fixed colors from a small palette (`COLOR` in
+  `appearance.ts` = `charPalette()` in `src/scene/glsl/fragment.glsl`,
+  `colorInfo.y = 3`).
+- An **item** is a list of parts (`ITEM_PARTS`); slots and items come from the
+  shared catalog `shared/shop-catalog.json`. Each character gets a
   visibility bitmask (`instanceParts`) and the shader hides everything else
-  (up to 24 parts), so all animations and emotes work with every outfit.
+  (up to 24 parts, 21 used), so all animations and emotes work with every outfit.
 - The outfit (one item index per slot) is sent as its own message when joining
-  and when it changes (`[2][n][items]` → server stores it and relays
-  `[4][id][n][items]`, also to players who join later).
+  and when it changes (`[2][n][items]`). The server replaces items the account
+  does not own with the slot default, relays `[4][id][n][items]` (also to
+  players who join later) and sends the corrected outfit back to the sender
+  when it differs.
 
 To add a shop item: add its geometry as a new part (a `.glb` skinned to the
-same skeleton, or code), give it a `PART` id and list it in `SLOTS`.
+same skeleton, or code) with a `PART` id, **append** the item to its slot in
+`shared/shop-catalog.json` (the order is the wire format) and list its parts in
+`ITEM_PARTS`. The admin panel picks it up automatically (default price 1).
 
 ## Chat & display names
 
 - **Chat:** every line goes to the whole room (the log at the bottom left) and
-  pops up as a speech bubble over the speaker. The relay cleans each line
+  pops up as a speech bubble over the speaker (`src/components/nametags.ts`). The relay cleans each line
   (invalid UTF-8, control/bidi characters, max 160 characters) and allows a
   burst of 5 lines, then one every 2 s.
 - **Names:** players start as `Khách <id>`. Choosing a name (character panel →
@@ -104,21 +118,21 @@ same skeleton, or code), give it a `PART` id and list it in `SLOTS`.
   create one and pick their name at the same time. The relay verifies the
   Firebase ID token (`server/firebase-auth.mjs`, no extra dependency) before
   showing the name to anyone. The name is remembered per account on that
-  device and re-claimed on every reconnect. The email is never shown.
+  device and re-claimed on every reconnect. The email is never shown. Names
+  are shown in the chat log only, not over the characters.
 - **Setup:** Firebase Console → Authentication → Sign-in method → enable
   **Email/Password**, and add your site's domain under *Authorized domains*. The relay
   reads the project id from `FIREBASE_PROJECT_ID` (or `VITE_FIREBASE_PROJECT_ID`;
   `npm run dev` takes it from `.env`). Without it, name changes are refused and
   everyone stays a guest; chat still works.
-- Code: `src/components/chat.ts`, `src/components/nametags.ts`,
+- Code: `src/components/chat.ts`, `src/components/nametags.ts` (bubbles),
   `src/components/authModal.ts` (sign-in / sign-up modal),
   `src/social/` (email/password accounts, names), `server/realm.mjs` (messages 5–7).
 
 ## Daily rewards (flowers)
 
 The flower button in the corner menu opens *Quà mỗi ngày*. Flowers (🌸) are the
-currency for the future accessory shop (clothes, glasses, shoes, fishing rod,
-kite, ice cream…). A signed-in account gets, per calendar day in Vietnam time:
+currency of the shop (below). A signed-in account gets, per calendar day in Vietnam time:
 
 - **Check-in** once a day: 5 flowers, Saturday and Sunday 10.
 - **Online milestones**, one after the other: 10 min → 5, then 30 more min
@@ -131,6 +145,44 @@ The relay decides and stores everything (`server/wallets.mjs`), so players
 cannot edit their balance: `wallets.json` in `DATA_DIR` (default
 `server/data/`, git-ignored; with Docker mount a volume on `/app/data`).
 `REWARDS_TZ` changes the calendar time zone. Guests see a sign-in button.
+
+## Shop (flowers)
+
+The bag button in the corner menu opens two tabs:
+
+- **Cửa hàng** — items by shelf: *Trang phục* (Áo xanh biển, Áo hồng, Quần
+  jean), *Giày dép* (Giày thể thao, Giày vải đỏ), *Phụ kiện* (Mũ rơm, Mũ lưỡi
+  trai, Kính râm, Kính tròn, Dây chuyền vỏ sò, Vòng hoa) and *Đồ dã ngoại*
+  (Cần câu, Đàn guitar, Diều, Kem). **Mua** then a second click confirms;
+  items you cannot afford show how many flowers are missing. Bought clothes
+  are put on right away.
+- **Túi đồ** — what the account owns: *Mặc / Đang mặc* (click to take off) for
+  clothes, *Dùng* for picnic items (same as their emote key).
+
+The basic items (t-shirt, shorts, skirt, sandals, bare feet, no hat / glasses
+/ necklace, every hairstyle) stay free for everyone, guests included.
+
+**Prices** are set in the admin panel, section **Cửa hàng** (`config/scene` →
+`shop.items.<id>` = `{ price, enabled }`, default 1 flower; 0 = free to
+claim; *Đang bán* off hides an item, owners keep it). The game shows them live;
+the relay reads the same document through the Firestore REST API (no
+credentials, the config is public), caches it 30 s and checks again when a
+buyer saw another price (answer *giá vừa đổi*).
+
+**The relay decides everything** (`server/shop.mjs`, `server/realm.mjs`):
+
+- purchase `[7][{"buy": id, "price": n}]` → checks sign-in, item for sale,
+  not owned, price, balance; then spends the flowers and records the item in
+  the wallet (`owned`, `spent`, last 50 `purchases`) and answers every session
+  of the account with a WALLET carrying `result.shop`;
+- outfits: items not owned are shown as the slot default (see Outfits); the
+  account's outfit is saved in its wallet and put back on at every sign-in,
+  and signing out takes bought items off;
+- emotes: the states of unowned picnic items are relayed as standing.
+
+Code: `shared/shop-catalog.json` (catalog, shared), `src/shop/` (typed
+catalog, ownership + prices on the client), `src/components/shop.ts` (panel),
+`src/admin/fields.ts` (price section).
 
 ## Admin panel & remote config (Firebase)
 
@@ -276,9 +328,11 @@ src/
 │                    # characters + glsl/ (verbatim shader files)
 ├── components/      # ui.ts, plain-DOM UI (loader, nav, easter counter, modals)
 ├── config/          # remote config: schema + defaults, Firebase bootstrap, live store
+├── shop/            # shop catalog (typed) + what the local player owns, prices
 └── admin/           # admin panel (admin.html)
 
-server/              # multiplayer relay (realm.mjs) + standalone static server (index.mjs)
+shared/              # shop-catalog.json, read by the game and the relay
+server/              # multiplayer relay (realm.mjs, wallets.mjs, shop.mjs) + standalone static server (index.mjs)
 public/assets/       # geometries (.bin), textures, audio, fonts, Draco/Basis decoders
 firestore.rules      # Firestore security rules (config read-only for players)
 ```

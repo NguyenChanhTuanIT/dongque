@@ -11,10 +11,12 @@ import { EMOTES, MOBILE_EMOTE_STATES, createEmoteClips } from './emotes';
 import { FishingGear } from './fishing';
 import { GuitarProp } from './guitar';
 import { HandProps } from './props';
+import { Pets } from './pets';
 import { HighFive } from './highfive';
 import { NpcManager } from './npcs';
 import { DEFAULT_OUTFIT, outfitMask, sanitizeOutfit, type Outfit } from './appearance';
 import { loadCharacterBody } from './characterModel';
+import { canUseEmote } from '../shop/inventory';
 
 const OUTFIT_STORAGE_KEY = 'summertime.outfit';
 
@@ -47,10 +49,12 @@ export class CharactersModule extends SceneModule {
     this.scene.add(guitar.group);
     const handProps = new HandProps();
     this.scene.add(handProps.group);
+    const pets = new Pets();
+    this.scene.add(pets.group);
     let highFive: HighFive | null = null;
     let npcs: NpcManager | null = null;
 
-    // Name tags / chat bubbles sit just above the tallest part (hat included).
+    // Chat bubbles sit just above the tallest part (hat included).
     skinned.geometry.computeBoundingBox();
     const top = skinned.geometry.boundingBox?.max.y ?? NaN;
     const headHeight = Number.isFinite(top) && top > 0.5 && top < 4 ? top + 0.05 : 1.6;
@@ -79,6 +83,7 @@ export class CharactersModule extends SceneModule {
         fishingGear.pose(character, instance, bones, stateWeight);
         guitar.pose(character, instance, bones, stateWeight);
         handProps.pose(character, instance, bones, stateWeight);
+        pets.pose(character, instance, bones, stateWeight);
       },
       colliderMesh,
       radiusPercentage: 0.2,
@@ -108,6 +113,7 @@ export class CharactersModule extends SceneModule {
       fishingGear.commit(this.mesh.count);
       guitar.commit(this.mesh.count);
       handProps.commit(this.mesh.count);
+      pets.commit(this.mesh.count);
       highFive?.update();
       npcs?.update();
       this.scene.audioController?.updatePlayerPosition(
@@ -129,6 +135,17 @@ export class CharactersModule extends SceneModule {
     });
     this.mesh.setOutfit(this.outfit);
     events.emit('webgl_character_update_outfit', this.outfit);
+    // Shop: picnic emotes need their item; the relay corrects / restores our
+    // outfit (items not owned, the account's saved outfit).
+    this.mesh.emoteAllowed = canUseEmote;
+    events.on('inventory_changed', () => {
+      const local = this.mesh._localObject;
+      if (!canUseEmote(local.userData.a)) local.userData.a = 0;
+    });
+    events.on('mp_own_outfit', (outfit: number[]) => {
+      const next = sanitizeOutfit(outfit);
+      if (next.some((v, i) => v !== this.outfit[i])) this.setOutfit(next);
+    });
     this.ready.resolve();
   }
 
@@ -137,7 +154,7 @@ export class CharactersModule extends SceneModule {
     else this.mesh._controls.disable();
   };
 
-  /** Equipped items (see appearance.ts SLOTS), remembered on this device. */
+  /** Equipped items (see appearance.ts SLOTS), remembered on this device (and by the relay per account). */
   outfit: Outfit = loadOutfit();
 
   setOutfit = (outfit: Outfit) => {

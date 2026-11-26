@@ -18,6 +18,8 @@ ENV NODE_ENV=production PORT=8787
 COPY server/package.json ./server/
 RUN cd server && npm install --omit=dev --no-audit --no-fund
 COPY server ./server
+# Shop catalog, shared with the game build.
+COPY shared ./shared
 COPY --from=build /app/dist ./dist
 # Flower wallets (daily rewards): mount a volume here so they survive new containers.
 ENV DATA_DIR=/app/data

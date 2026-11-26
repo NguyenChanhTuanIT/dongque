@@ -9,6 +9,10 @@
 //     one is claimed and stops once it is reached (until claimed). Time counts
 //     while the account is "online": the relay calls online()/offline() when it
 //     has / no longer has a visible game tab (several tabs count once).
+//
+// Shop (server/shop.mjs): buy() spends flowers on an item for good (`owned`);
+// the account's equipped outfit (`outfit`, slot id → item id) is kept here too,
+// so it follows the account to any device.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,6 +27,7 @@ export const ONLINE_TIERS = [
 const MAX_ACCRUAL_MS = 60_000;
 const SAVE_DELAY_MS = 3_000;
 const KEEP_CHECKINS = 14;
+const KEEP_PURCHASES = 50;
 const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
 /**
@@ -34,6 +39,10 @@ const WEEKDAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
  * @property {number} stage     online milestones claimed that day (0 … ONLINE_TIERS.length)
  * @property {number} stageMs   time counted towards milestone `stage`
  * @property {string[]} checkins recent check-in days (YYYY-MM-DD)
+ * @property {string[]} owned   shop items bought (ids from shared/shop-catalog.json)
+ * @property {number} spent     lifetime flowers spent in the shop
+ * @property {Array<{ id: string, price: number, at: number }>} purchases  latest purchases (support / audit)
+ * @property {Record<string, string> | null} outfit  equipped items, slot id → item id (null = never saved)
  */
 
 /**
@@ -89,7 +98,14 @@ export function createWallets({ file, timeZone = 'Asia/Ho_Chi_Minh', log = (msg)
   /** The wallet of `uid`, its daily fields reset when the day changed. */
   function wallet(uid, now) {
     let w = wallets[uid];
-    if (!w) w = wallets[uid] = { flowers: 0, earned: 0, day: '', onlineMs: 0, stage: 0, stageMs: 0, checkins: [] };
+    if (!w) w = wallets[uid] = { flowers: 0, earned: 0, day: '', onlineMs: 0, stage: 0, stageMs: 0, checkins: [], owned: [], spent: 0, purchases: [], outfit: null };
+    if (!Array.isArray(w.owned)) {
+      // Saved before the shop.
+      w.owned = [];
+      w.spent = 0;
+      w.purchases = [];
+      w.outfit = null;
+    }
     const day = dayOf(now);
     if (w.day !== day) {
       w.day = day;
@@ -170,6 +186,40 @@ export function createWallets({ file, timeZone = 'Asia/Ho_Chi_Minh', log = (msg)
       return { ok: true, flowers: t.flowers };
     },
 
+    /** Whether the account bought `id` (no wallet is created for the check). */
+    owns(uid, id) {
+      return !!uid && !!wallets[uid]?.owned?.includes(id);
+    },
+
+    /**
+     * Spend `price` flowers on item `id`. The caller checked that the item is
+     * for sale at that price.
+     * @returns {{ ok: true, price: number } | { ok: false, error: 'owned' | 'poor' }}
+     */
+    buy(uid, id, price, now = Date.now()) {
+      const w = wallet(uid, now);
+      if (w.owned.includes(id)) return { ok: false, error: 'owned' };
+      if (w.flowers < price) return { ok: false, error: 'poor' };
+      w.flowers -= price;
+      w.spent += price;
+      w.owned = [...w.owned, id];
+      w.purchases = [...w.purchases, { id, price, at: now }].slice(-KEEP_PURCHASES);
+      save();
+      return { ok: true, price };
+    },
+
+    /** The account's saved outfit (slot id → item id), or null. */
+    getOutfit(uid) {
+      return wallets[uid]?.outfit ?? null;
+    },
+
+    setOutfit(uid, outfit, now = Date.now()) {
+      const w = wallet(uid, now);
+      if (JSON.stringify(w.outfit) === JSON.stringify(outfit)) return;
+      w.outfit = outfit;
+      save();
+    },
+
     /** Everything the rewards panel shows. */
     status(uid, now = Date.now()) {
       accrue(uid, now);
@@ -190,6 +240,7 @@ export function createWallets({ file, timeZone = 'Asia/Ho_Chi_Minh', log = (msg)
         stageSec: Math.floor(w.stageMs / 1000),
         counting: lastAccrual.has(uid),
         tiers: ONLINE_TIERS.map((t, i) => ({ minutes: t.minutes, flowers: t.flowers, claimed: i < w.stage })),
+        owned: w.owned,
       };
     },
 

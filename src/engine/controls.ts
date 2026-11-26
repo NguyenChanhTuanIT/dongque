@@ -1,5 +1,5 @@
 // Player character controls: keyboard (WASD/arrows/space, Shift sprint,
-// E / 1..9 emotes), mouse drag, touch joystick (the on-screen circles UI; full push
+// E / 1..9 / 0 Q H C M emotes), mouse drag, touch joystick (the on-screen circles UI; full push
 // sprints), tap/double-tap jump, gamepad (stick, A jump, RB/L3 sprint, Y emote).
 // Port of the original `controls` + `circles` classes.
 
@@ -174,7 +174,7 @@ export class Circles extends Group {
 // ---------------------------------------------------------------------------
 
 /** Emote slots beyond 1..9 (keep in sync with the `key` of scene/emotes.ts EMOTES). */
-const EXTRA_EMOTE_KEYS: Record<string, number> = { Digit0: 10, KeyQ: 11, KeyH: 12 };
+const EXTRA_EMOTE_KEYS: Record<string, number> = { Digit0: 10, KeyQ: 11, KeyH: 12, KeyC: 13, KeyM: 14 };
 
 export interface ControlsOptions {
   mouseCenter?: Vector2;

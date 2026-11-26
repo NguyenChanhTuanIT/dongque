@@ -5,7 +5,7 @@
 //   [21]     u8   bits 0-3 a   0 on ground (idle↔run by speed), 1 airborne,
 //                               2 bored, 3 wave, 4 clap, 5 dance, 6 sit, 7 fishing,
 //                               8 prone, 9 sunbathe, 10 guitar, 11 kite,
-//                               12 ice cream, 13 high five
+//                               12 ice cream, 13 high five, 14 dog, 15 cat (field full)
 //                 bits 4-6 reserved (0)
 //                 bit 7    sprinting
 // Outfits travel separately (OUTFIT messages, see socket.ts / realm.mjs).

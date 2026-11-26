@@ -589,6 +589,39 @@ nav .look-menu {
   overflow-y: auto;
 }
 nav .look-menu.open { display: flex; }
+/* Title + close button, pinned while the panel scrolls (see panelBar.ts). */
+nav .panel-bar {
+  position: sticky;
+  top: -12px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -12px -12px 0;
+  padding: 10px 12px 6px;
+  background-color: #f9efdc;
+  border-radius: 6px 6px 0 0;
+}
+nav .panel-bar b { font-weight: 400; font-size: 18px; }
+nav .panel-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background-color: #faf2e2;
+  box-shadow: 2px 2px #716c66;
+  transform: rotate(8deg);
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+nav .panel-close svg { width: 13px; height: 13px; transform: rotate(-8deg); }
+nav .panel-close:active { transform: rotate(8deg) translateY(2px); box-shadow: 1px 1px #716c66; }
+nav .panel-content { display: flex; flex-direction: column; gap: 8px; }
 nav .look-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 nav .look-group span { width: 100%; font-size: 14px; opacity: 0.8; }
 nav .look-group button {
@@ -701,7 +734,7 @@ nav .name-form input {
 nav .name-group small { width: 100%; font-size: 13px; }
 nav .name-group small:empty { display: none; }
 
-/* ---- name tags + speech bubbles over characters ---- */
+/* ---- speech bubbles over characters (no name labels) ---- */
 #nametags {
   position: absolute;
   inset: 0;
@@ -719,19 +752,6 @@ nav .name-group small:empty { display: none; }
   gap: 4px;
   will-change: transform;
 }
-#nametags .name {
-  padding: 1px 7px;
-  border-radius: 4px;
-  background: rgba(113, 108, 102, 0.75);
-  color: #fffdf8;
-  font-size: 14px;
-  line-height: 1.3;
-  white-space: nowrap;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-#nametags .self .name { background: rgba(217, 140, 80, 0.85); }
 #nametags .bubble {
   display: none;
   position: relative;
@@ -830,7 +850,7 @@ nav .name-group small:empty { display: none; }
 #chat.open .chat-log { overflow-y: auto; pointer-events: auto; }
 #chat.open .chat-log li.old { opacity: 0.9; }
 /* Touch screens have no Enter key: the nav chat button opens it instead. */
-@media (hover: none) {
+@media (hover: none), (pointer: coarse) {
   #chat .chat-hint { display: none; }
 }
 
@@ -896,3 +916,81 @@ nav .rewards-note { margin: 0; font-size: 13px; opacity: 0.8; }
 nav .rewards-toast { margin: 0; font-size: 15px; color: #8a5a3c; min-height: 1.2em; }
 nav .rewards-toast:empty { display: none; }
 nav .rewards-steps { grid-template-columns: repeat(3, 1fr); }
+
+/* ---- shop & bag (bag button) ---- */
+nav svg.bag {
+  display: block;
+  width: 20px;
+  height: 20px;
+  transform: rotate(-10deg);
+  position: absolute;
+  top: 5px;
+  left: 6px;
+}
+nav .look-group button.locked { border-style: dashed; opacity: 0.75; }
+nav .emote-menu .lock { display: none; font-size: 12px; }
+nav .emote-menu button.locked { opacity: 0.7; }
+nav .emote-menu button.locked .lock { display: inline; }
+nav .shop-menu { width: min(360px, calc(100vw - 110px)); }
+nav .shop-menu button {
+  padding: 5px 10px;
+  border: 1.5px solid #716c66;
+  border-radius: 5px;
+  background: transparent;
+  color: #716c66;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+nav .shop-menu button.primary,
+nav .shop-menu button[aria-pressed='true'],
+nav .shop-menu button[aria-selected='true'] { background: #716c66; color: #f9efdc; }
+nav .shop-menu button[disabled] { opacity: 0.6; cursor: default; }
+nav .shop-menu button.confirm { background: #e0a34a; border-color: #b97d2c; color: #3d2a12; }
+nav .shop-menu button.link { padding: 0; border: none; text-decoration: underline; font-size: inherit; }
+nav .shop-menu kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  margin-left: 3px;
+  border-radius: 3px;
+  background: #f9efdc;
+  color: #716c66;
+  font-family: inherit;
+  font-size: 11px;
+}
+nav .shop-head { justify-content: space-between; }
+nav .shop-tabs { display: flex; gap: 6px; }
+nav .shop-tabs button { flex: 1; }
+nav .shop-filters { display: flex; flex-wrap: wrap; gap: 5px; }
+nav .shop-filters button { padding: 4px 8px; font-size: 13px; }
+nav .shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+nav .shop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 5px;
+  border: 1.5px solid rgba(113, 108, 102, 0.35);
+  border-radius: 6px;
+  text-align: center;
+  line-height: 1.15;
+}
+nav .shop-card.highlight { border-color: #e0a34a; background: rgba(224, 163, 74, 0.15); }
+nav .shop-icon { font-size: 26px; line-height: 1.1; }
+nav .shop-card b { font-weight: 400; font-size: 14px; }
+nav .shop-card small { font-size: 11px; opacity: 0.7; }
+nav .shop-card button { margin-top: 3px; padding: 4px 7px; font-size: 13px; }
+nav .shop-empty { opacity: 0.8; font-size: 14px; }

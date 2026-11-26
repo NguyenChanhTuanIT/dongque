@@ -37,6 +37,24 @@
             const float rampStep = 1.0 / 100.0;
             return 1.0 - index * rampStep + rampStep * 0.5;
         }
+
+        #ifdef IS_CHARACTER
+            // Fixed colors of the shop items (colorInfo.y = 3, colorInfo.x =
+            // index), see COLOR in src/scene/appearance.ts.
+            vec3 charPalette(float index) {
+                float i = floor(index + 0.5);
+                if (i < 0.5) return vec3(0.29, 0.43, 0.65);  // 0 denim
+                if (i < 1.5) return vec3(0.36, 0.64, 0.84);  // 1 sky blue
+                if (i < 2.5) return vec3(0.95, 0.62, 0.71);  // 2 pink
+                if (i < 3.5) return vec3(0.96, 0.95, 0.91);  // 3 white
+                if (i < 4.5) return vec3(0.33, 0.32, 0.31);  // 4 charcoal
+                if (i < 5.5) return vec3(0.85, 0.33, 0.30);  // 5 red
+                if (i < 6.5) return vec3(0.42, 0.29, 0.20);  // 6 brown
+                if (i < 7.5) return vec3(0.97, 0.89, 0.78);  // 7 cream
+                if (i < 8.5) return vec3(1.00, 0.55, 0.69);  // 8 flower pink
+                return vec3(1.00, 0.82, 0.37);               // 9 flower yellow
+            }
+        #endif
     #endif
 
     #ifdef RECEIVE_SHADOW_CLOUDS
@@ -238,6 +256,12 @@
                         // skin
                         float rampY = getRamp(79.0 + clamp(floor(vSeed), 0.0, 3.0));
                         diffuseSpecular = texture2D(tRamp, vec2(rampX, rampY)).rgb;
+                    } else if (vColorInfo.y > 2.5) {
+                        // shop item palette: three toon bands, shadows slightly cool
+                        vec3 pc = charPalette(vColorInfo.x);
+                        vec3 pcShade = pc * vec3(0.58, 0.6, 0.72);
+                        float band = floor(rampX * 2.99);
+                        diffuseSpecular = band < 0.5 ? pcShade : (band < 1.5 ? mix(pcShade, pc, 0.6) : pc);
                     } else {
                         // player color
                         vec3 cc_color = vec3(0.0);

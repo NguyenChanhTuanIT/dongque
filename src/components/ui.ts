@@ -9,6 +9,9 @@ import { AuthModal, nameError, normalizeName } from './authModal';
 import { ChatPanel } from './chat';
 import { NameTags } from './nametags';
 import { RewardsPanel, flowerIcon } from './rewards';
+import { ShopPanel, bagIcon } from './shop';
+import { addPanelBar } from './panelBar';
+import { canUseEmote, owns, priceOf } from '../shop/inventory';
 
 /** Emote menu entries: item n = key n (see scene/characters.ts emoteSlots). */
 const EMOTE_MENU = EMOTES.map((e) => e.label);
@@ -68,7 +71,7 @@ export class UiController {
     root.append(this.loader);
 
     this.nav = document.createElement('nav');
-    this.nav.innerHTML = '<button class="button" type="button" aria-label="toggle sound"></button><button class="button" type="button" aria-label="randomize character color"><div class="color-square"></div></button><button class="button" type="button" aria-label="about">' + infoIcon + '</button><button class="button" type="button" aria-label="emote (E)" title="Biểu cảm (E)">' + emoteIcon + '</button><button class="button" type="button" aria-label="character" title="Nhân vật">' + lookIcon + '</button><button class="button" type="button" aria-label="chat (Enter)" title="Chat (Enter)">' + chatIcon + '</button><button class="button" type="button" aria-label="daily rewards" title="Quà mỗi ngày">' + flowerIcon + '</button><div class="cnt">0/0</div>';
+    this.nav.innerHTML = '<button class="button" type="button" aria-label="toggle sound"></button><button class="button" type="button" aria-label="randomize character color"><div class="color-square"></div></button><button class="button" type="button" aria-label="about">' + infoIcon + '</button><button class="button" type="button" aria-label="emote (E)" title="Biểu cảm (E)">' + emoteIcon + '</button><button class="button" type="button" aria-label="character" title="Nhân vật">' + lookIcon + '</button><button class="button" type="button" aria-label="chat (Enter)" title="Chat (Enter)">' + chatIcon + '</button><button class="button" type="button" aria-label="daily rewards" title="Quà mỗi ngày">' + flowerIcon + '</button><button class="button" type="button" aria-label="shop" title="Cửa hàng & túi đồ">' + bagIcon + '</button><div class="cnt">0/0</div>';
     root.append(this.nav);
     this.soundButton = this.nav.querySelectorAll('button')[0];
     const colorButton = this.nav.querySelectorAll('button')[1];
@@ -85,18 +88,32 @@ export class UiController {
     const emoteMenu = document.createElement('div');
     emoteMenu.className = 'emote-menu';
     emoteMenu.setAttribute('role', 'menu');
-    EMOTE_MENU.forEach((label, i) => {
+    const emoteItems = EMOTE_MENU.map((label, i) => {
       const item = document.createElement('button');
       item.type = 'button';
       item.setAttribute('role', 'menuitem');
       item.innerHTML = `<kbd>${EMOTES[i].key}</kbd>`;
       item.append(label);
+      const lock = document.createElement('span');
+      lock.className = 'lock';
+      lock.textContent = '🔒';
+      item.append(lock);
       item.addEventListener('click', () => {
         events.emit('webgl_character_emote', i + 1);
         setMenu(false);
       });
       emoteMenu.append(item);
+      return item;
     });
+    // Picnic emotes (fishing, guitar, kite, ice cream) are bought in the shop.
+    const renderEmoteLocks = () =>
+      emoteItems.forEach((item, i) => {
+        const locked = !canUseEmote(EMOTES[i].state);
+        item.classList.toggle('locked', locked);
+        item.title = locked ? 'Mua ở cửa hàng để dùng' : '';
+      });
+    events.on('inventory_changed', renderEmoteLocks);
+    renderEmoteLocks();
     this.nav.append(emoteMenu);
     const setMenu = (open: boolean) => {
       emoteMenu.style.top = `${emoteButton.offsetTop - 4}px`;
@@ -120,6 +137,7 @@ export class UiController {
     chatButton.addEventListener('pointerdown', (e) => e.preventDefault());
     chatButton.addEventListener('click', () => this.chat.toggle());
     new RewardsPanel(this.nav, this.nav.querySelectorAll('button')[6], () => this.authModal.open('login'));
+    new ShopPanel(this.nav, this.nav.querySelectorAll('button')[7], () => this.authModal.open('login'));
 
     this.secretModal = document.createElement('div');
     this.secretModal.id = 'modal';
@@ -144,9 +162,11 @@ export class UiController {
     panel.className = 'look-menu';
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Nhân vật và trang phục');
-    panel.append(this.createNameSection());
+    const content = addPanelBar(panel, 'Nhân vật', () => setOpen(false));
+    content.append(this.createNameSection());
     const renderers: Array<() => void> = [];
-    const group = (title: string, labels: string[], pick: (i: number) => Outfit, pressed: (i: number) => boolean) => {
+    /** `ids` (catalog item per button): items not owned show a lock and open the shop. */
+    const group = (title: string, labels: string[], pick: (i: number) => Outfit, pressed: (i: number) => boolean, ids?: string[]) => {
       const section = document.createElement('div');
       section.className = 'look-group';
       const heading = document.createElement('span');
@@ -156,12 +176,31 @@ export class UiController {
         const b = document.createElement('button');
         b.type = 'button';
         b.textContent = label;
-        b.addEventListener('click', () => events.emit('webgl_character_outfit', pick(i)));
+        b.addEventListener('click', () => {
+          const id = ids?.[i];
+          if (id && !owns(id)) {
+            setOpen(false);
+            events.emit('shop_open', id);
+            return;
+          }
+          events.emit('webgl_character_outfit', pick(i));
+        });
         section.append(b);
         return b;
       });
-      renderers.push(() => buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(pressed(i)))));
-      panel.append(section);
+      renderers.push(() =>
+        buttons.forEach((b, i) => {
+          b.setAttribute('aria-pressed', String(pressed(i)));
+          const id = ids?.[i];
+          const locked = !!id && !owns(id);
+          b.textContent = locked ? `🔒 ${labels[i]}` : labels[i];
+          b.classList.toggle('locked', locked);
+          b.title = locked ? 'Mua ở cửa hàng' : '';
+          // No longer sold and not owned: nothing to show.
+          b.hidden = locked && !priceOf(id!).enabled;
+        }),
+      );
+      content.append(section);
     };
     group('Nhân vật', PRESETS.map((p) => p.label), (i) => PRESETS[i].apply(outfit), (i) => PRESETS[i].is(outfit));
     SLOTS.forEach((slot, s) => {
@@ -169,7 +208,7 @@ export class UiController {
         const next = [...outfit];
         next[s] = i;
         return sanitizeOutfit(next);
-      }, (i) => outfit[s] === i);
+      }, (i) => outfit[s] === i, slot.items.map((it) => it.id));
     });
     this.nav.append(panel);
     const render = () => renderers.forEach((r) => r());
@@ -177,6 +216,7 @@ export class UiController {
       outfit = sanitizeOutfit(value);
       render();
     });
+    events.on('inventory_changed', render);
     render();
     const setOpen = (open: boolean) => {
       panel.classList.toggle('open', open);

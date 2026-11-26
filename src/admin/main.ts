@@ -389,6 +389,22 @@ async function boot() {
           control = input;
           break;
         }
+        case 'shopItem': {
+          const item = value as { price: number; enabled: boolean };
+          const price = el('input', { type: 'number', value: String(item.price), min: '0', step: '1', ariaLabel: `Giá ${field.label}` });
+          price.addEventListener('input', () => {
+            const v = Math.round(num(price, NaN));
+            if (Number.isFinite(v) && v >= 0) commit({ ...(getPath(draft, field.path) as object), price: v });
+          });
+          const enabled = el('input', { type: 'checkbox', checked: item.enabled });
+          enabled.addEventListener('change', () => commit({ ...(getPath(draft, field.path) as object), enabled: enabled.checked }));
+          control = el('div', { className: 'row shop-item' }, [
+            price,
+            el('span', { className: 'muted', textContent: 'hoa' }),
+            el('label', { className: 'shop-enabled' }, [enabled, 'Đang bán']),
+          ]);
+          break;
+        }
         case 'vec3': {
           const vec = value as number[];
           const inputs = vec.map((v, i) =>
@@ -407,7 +423,7 @@ async function boot() {
         className: `badge ${field.reload ? 'reload' : 'live'}`,
         textContent: field.reload ? 'tải lại' : 'realtime',
       });
-      const label = el('div', { className: 'field-label' }, [el('span', { textContent: field.label }), badge]);
+      const label = el('div', { className: 'field-label' }, [el('span', { textContent: field.icon ? `${field.icon} ${field.label}` : field.label }), badge]);
       const wrap = el('div', { className: `field ${field.kind}` }, [label, control]);
       if (field.hint) wrap.append(el('small', { className: 'muted', textContent: field.hint }));
       return wrap;
