@@ -187,7 +187,7 @@ export class UiController {
     }
     // Picnic emotes (fishing, guitar, kite, ice cream) need their item: the menu
     // does not lock them; choosing one without the item shows a notice instead.
-    this.setupNotices(root);
+    this.setupNotices();
 
     // ---- ? help menu ----
     const helpButton = navButton('help');
@@ -456,50 +456,35 @@ export class UiController {
   }
 
   /**
-   * Short notices at the top of the screen (one at a time), with an optional button:
+   * Notices, as lines of the chat box (chat.ts `game_hint`), like every other
+   * message of the game:
    *   - "Bạn cần có [vật phẩm]" when an emote needs an item the player does not
    *     have (menu, keys or gamepad; engine/characters.ts emits
-   *     webgl_emote_locked). The emote does not play; the button opens the shop.
+   *     webgl_emote_locked). The emote does not play; its button opens the shop.
+   *     Repeats within a few seconds are dropped (holding a key, the gamepad).
    *   - Guests (no account): after signing up the relay moves the guest
    *     wallet into the account (result.sync). The warning about losing it
    *     is the GuestSaveModal (guestModal.ts).
    */
-  private setupNotices(root: HTMLElement) {
-    const notice = document.createElement('div');
-    notice.id = 'item-notice';
-    notice.setAttribute('role', 'status');
-    notice.setAttribute('aria-live', 'polite');
-    notice.innerHTML = '<span></span><button type="button"></button>';
-    const text = notice.querySelector('span') as HTMLElement;
-    const button = notice.querySelector('button') as HTMLButtonElement;
-    root.append(notice);
-    let onButton: (() => void) | null = null;
-    let timer = 0;
-    const hide = () => notice.classList.remove('show');
-    const show = (message: string, ms: number, action?: { label: string; run: () => void }) => {
-      text.textContent = message;
-      button.hidden = !action;
-      button.textContent = action?.label ?? '';
-      onButton = action?.run ?? null;
-      notice.classList.add('show');
-      window.clearTimeout(timer);
-      timer = window.setTimeout(hide, ms);
+  private setupNotices() {
+    let last = { text: '', at: 0 };
+    const say = (text: string, action?: { label: string; run: () => void }) => {
+      const now = performance.now();
+      if (text === last.text && now - last.at < 4000) return;
+      last = { text, at: now };
+      events.emit('game_hint', text, action);
     };
-    button.addEventListener('click', () => {
-      hide();
-      onButton?.();
-    });
 
     events.on('webgl_emote_locked', (state: number) => {
       const item = itemForEmote(state);
-      if (item) show(`Bạn cần có ${item.label}`, 3500, { label: 'Cửa hàng', run: () => events.emit('shop_open', item.id) });
+      if (item) say(`Bạn cần có ${item.label} để làm động tác này.`, { label: '👜 Cửa hàng', run: () => events.emit('shop_open', item.id) });
     });
 
     // Guest wallet synced (or not) after signing up / in.
     events.on('mp_wallet', (wallet: { result?: { sync?: string } } | null) => {
       const sync = wallet?.result?.sync;
-      if (sync === 'adopted') show('Đã đồng bộ hoa và đồ vào tài khoản ✓', 4500);
-      else if (sync === 'skipped') show('Tài khoản đã có dữ liệu: hoa và đồ ẩn danh không được gộp.', 6000);
+      if (sync === 'adopted') say('Đã đồng bộ hoa và đồ vào tài khoản ✓');
+      else if (sync === 'skipped') say('Tài khoản đã có dữ liệu: hoa và đồ ẩn danh không được gộp.');
     });
   }
 

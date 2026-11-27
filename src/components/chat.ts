@@ -5,9 +5,11 @@
 //
 // The chat box is also where the game talks to the player (nothing floats over
 // the scene): notice lines (`game_hint`), one-time how-tos (`game_tip`, e.g. the
-// fishing pier) and, pinned above the input, the actions of the place the player
-// stands in (`chat_action`: sit / lie on a bench, fish on the pier…). Action
-// buttons carry `data-slot` (an emote slot) so touch screens can use them.
+// fishing pier) and the actions of the place the player stands in (`chat_action`:
+// sit / lie on a bench, fish on the pier…), each a message line of the log that
+// follows the place (updated in place, moved to the bottom when it changes, faded
+// out when the player leaves). Action buttons carry `data-slot` (an emote slot)
+// so touch screens can use them.
 
 import { events } from '../core/events';
 import { CHAT_MAX_CHARS, CLOSE_BANNED, NOTICE_BANNED, NOTICE_CHAT_MUTED, NOTICE_CHAT_REPEAT, NOTICE_CHAT_TOO_FAST, NOTICE_GUEST_BLOCKED } from '../engine/multiplayer/socket';
@@ -25,9 +27,8 @@ export class ChatPanel {
   private readonly log: HTMLOListElement;
   private readonly form: HTMLFormElement;
   private readonly input: HTMLInputElement;
-  private readonly action: HTMLDivElement;
-  /** Place actions by source (bench, pier, coop…): HTML, '' when none. */
-  private readonly actions = new Map<string, string>();
+  /** Place actions by source (bench, pier, coop…): their HTML and log line. */
+  private readonly actions = new Map<string, { html: string; li: HTMLLIElement }>();
   private open = false;
 
   /** `canOpen` is false while a full-screen overlay is up. */
@@ -37,22 +38,26 @@ export class ChatPanel {
     this.root.innerHTML =
       '<ol class="chat-log" aria-live="polite" aria-label="Tin nhắn"></ol>' +
       '<form class="chat-form" autocomplete="off"><input type="text" enterkeyhint="send" aria-label="Tin nhắn" placeholder="Nói gì đó… (Enter gửi, Esc đóng)"><button type="submit">Gửi</button></form>' +
-      '<div class="chat-action" hidden></div>' +
       '<button type="button" class="chat-hint"><span class="hint-keys">Nhấn <kbd>Enter</kbd> để chat</span><span class="hint-touch">💬 Chạm để chat</span></button>';
     parent.append(this.root);
     this.log = this.root.querySelector('.chat-log') as HTMLOListElement;
     this.form = this.root.querySelector('form') as HTMLFormElement;
     this.input = this.form.querySelector('input') as HTMLInputElement;
     this.input.maxLength = CHAT_MAX_CHARS;
-    this.action = this.root.querySelector('.chat-action') as HTMLDivElement;
     const hint = this.root.querySelector('.chat-hint') as HTMLButtonElement;
     hint.addEventListener('click', () => this.setOpen(true));
-    this.action.addEventListener('click', (e) => {
-      const slot = (e.target as HTMLElement).closest<HTMLElement>('[data-slot]')?.dataset.slot;
-      if (slot) events.emit('webgl_character_emote', Number(slot));
+    // Buttons inside lines of the log: an emote slot (`data-slot`) or an event
+    // with one argument (`data-emit` / `data-arg`, e.g. answering an invitation).
+    this.log.addEventListener('click', (e) => {
+      const button = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
+      if (!button || button.disabled) return;
+      if (button.dataset.slot) events.emit('webgl_character_emote', Number(button.dataset.slot));
+      else if (button.dataset.emit) events.emit(button.dataset.emit, button.dataset.arg);
     });
     // Keep the game (not a button) focused: keys keep moving the character.
-    this.action.addEventListener('pointerdown', (e) => e.preventDefault());
+    this.log.addEventListener('pointerdown', (e) => {
+      if ((e.target as HTMLElement).closest('button')) e.preventDefault();
+    });
 
     this.form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -94,17 +99,24 @@ export class ChatPanel {
         'system',
       );
     });
-    // Short game hints (e.g. stone benches: "move closer", "bench is full").
-    events.on('game_hint', (text: string) => this.addLine('', text, 'system'));
+    // Short game hints (e.g. stone benches: "move closer", "bench is full"),
+    // optionally with one button (e.g. "Bạn cần có Cần câu" → "Cửa hàng").
+    events.on('game_hint', (text: string, action?: { label: string; run: () => void }) => {
+      const li = this.addLine('', text, 'system');
+      if (!action) return;
+      li.classList.add('action');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = action.label;
+      button.addEventListener('click', () => {
+        button.disabled = true;
+        action.run();
+      });
+      li.append(button);
+    });
     // One-time how-tos of a place (scene/spots.ts): first line bold, line breaks kept.
     events.on('game_tip', (text: string) => this.addLine('', text, 'tip'));
-    events.on('chat_action', (source: string, html: string) => {
-      if ((this.actions.get(source) ?? '') === html) return;
-      this.actions.set(source, html);
-      const all = [...this.actions.values()].filter(Boolean).join('');
-      this.action.innerHTML = all;
-      this.action.hidden = !all;
-    });
+    events.on('chat_action', (source: string, html: string) => this.setAction(source, html));
     events.on('auth_banned', () => this.addLine('', 'Tài khoản này đã bị khoá nên đã được đăng xuất.', 'system'));
   }
 
@@ -140,7 +152,39 @@ export class ChatPanel {
     });
   }
 
-  private addLine(author: string, text: string, kind: '' | 'self' | 'system' | 'tip') {
+  /**
+   * The action line of a place: a message in the log (with its buttons) while
+   * the player is there. A change rewrites it and moves it to the bottom (it is
+   * the latest news); leaving fades it out and removes it.
+   */
+  private setAction(source: string, html: string) {
+    const current = this.actions.get(source);
+    if ((current?.html ?? '') === html) return;
+    if (!html) {
+      if (!current) return;
+      this.actions.delete(source);
+      const li = current.li;
+      li.querySelectorAll('button').forEach((b) => (b.disabled = true));
+      li.classList.add('old', 'gone');
+      window.setTimeout(() => li.remove(), 700);
+      return;
+    }
+    const li = current?.li ?? document.createElement('li');
+    li.className = 'system action';
+    li.innerHTML = html;
+    this.actions.set(source, { html, li });
+    this.appendLine(li);
+  }
+
+  /** Append (or move) a line to the bottom of the log, trimmed and scrolled. */
+  private appendLine(li: HTMLLIElement) {
+    const stick = this.log.scrollTop + this.log.clientHeight >= this.log.scrollHeight - 4;
+    this.log.append(li);
+    while (this.log.children.length > MAX_LINES) this.log.firstElementChild?.remove();
+    if (stick || !this.open) this.log.scrollTop = this.log.scrollHeight;
+  }
+
+  private addLine(author: string, text: string, kind: '' | 'self' | 'system' | 'tip'): HTMLLIElement {
     const li = document.createElement('li');
     if (kind) li.className = kind;
     if (author) {
@@ -156,10 +200,8 @@ export class ChatPanel {
     } else {
       li.append(text);
     }
-    const stick = this.log.scrollTop + this.log.clientHeight >= this.log.scrollHeight - 4;
-    this.log.append(li);
-    while (this.log.children.length > MAX_LINES) this.log.firstElementChild?.remove();
-    if (stick || !this.open) this.log.scrollTop = this.log.scrollHeight;
+    this.appendLine(li);
     window.setTimeout(() => li.classList.add('old'), kind === 'tip' ? TIP_VISIBLE_MS : LINE_VISIBLE_MS);
+    return li;
   }
 }

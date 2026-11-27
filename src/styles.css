@@ -1142,27 +1142,18 @@ nav input,
 }
 #chat .chat-hint .hint-touch { display: none; }
 #chat.open .chat-hint { display: none; }
-/* Actions of the place the player stands in (bench, pier, coop): pinned above the input. */
-/* Styled like a system chat line (italic notice), with small inline buttons. */
-#chat .chat-action {
+/* Actions of the place the player stands in (bench, pier, coop): a system line of
+   the log (chat.ts setAction) with small inline buttons. */
+#chat .chat-log li.action {
   display: flex;
   flex-wrap: wrap;
-  align-self: flex-start;
   align-items: center;
   gap: 4px 6px;
-  max-width: 100%;
-  padding: 3px 8px;
-  border-radius: 5px;
-  background: rgba(249, 239, 220, 0.88);
-  font-size: 16px;
-  font-style: italic;
-  line-height: 1.3;
-  opacity: 0.85;
 }
-#chat .chat-action[hidden] { display: none; }
-#chat .chat-action span { margin-right: 2px; }
-#chat .chat-action span + span::before { content: '·'; margin-right: 6px; }
-#chat .chat-action button {
+#chat .chat-log li.action.gone { opacity: 0 !important; }
+#chat .chat-log li.action span { margin-right: 2px; }
+#chat .chat-log li.action span + span::before { content: '·'; margin-right: 6px; }
+#chat .chat-log li.action button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1180,9 +1171,10 @@ nav input,
   cursor: pointer;
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
-#chat .chat-action button:hover { background: rgba(113, 108, 102, 0.12); }
-#chat .chat-action button:active { transform: translateY(1px); }
-#chat .chat-action kbd {
+#chat .chat-log li.action button.primary { background: #716c66; color: #f9efdc; font-style: normal; }
+#chat .chat-log li.action button:hover { background: rgba(113, 108, 102, 0.12); }
+#chat .chat-log li.action button:active { transform: translateY(1px); }
+#chat .chat-log li.action kbd {
   display: inline-grid;
   place-items: center;
   min-width: 16px;
@@ -1201,8 +1193,8 @@ nav input,
 @media (hover: none), (pointer: coarse) {
   #chat .chat-hint .hint-keys { display: none; }
   #chat .chat-hint .hint-touch { display: inline; padding: 6px 10px; border-radius: 5px; background: rgba(113, 108, 102, 0.55); text-shadow: none; font-size: 15px; }
-  #chat .chat-action kbd { display: none; } /* no keys to press */
-  #chat .chat-action button { padding: 4px 12px; } /* finger-sized, still inline */
+  #chat .chat-log li.action kbd { display: none; } /* no keys to press */
+  #chat .chat-log li.action button { padding: 4px 12px; } /* finger-sized, still inline */
 }
 
 /* ---- daily rewards (flower button) ---- */
@@ -1369,40 +1361,6 @@ nav svg.bag {
 :is(nav, .nav-modal) .shop-card button { margin-top: 3px; padding: 4px 7px; font-size: 13px; }
 :is(nav, .nav-modal) .shop-empty { opacity: 0.8; font-size: 14px; }
 
-/* ---- "Bạn cần có [vật phẩm]" notice (ui.ts setupItemNotice) ---- */
-#item-notice {
-  position: absolute;
-  top: 24px;
-  left: 50%;
-  z-index: 11; /* above the modals (9) and the sign-in dialog (10) */
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 10px 9px 16px;
-  border-radius: 6px;
-  background: #f9efdc;
-  box-shadow: 2px 2px #716c66;
-  color: #716c66;
-  font-family: var(--default-font);
-  font-size: 17px;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(-50%, -8px) rotate(-1deg);
-  transition: opacity 0.25s ease, transform 0.25s ease;
-}
-#item-notice.show { opacity: 1; pointer-events: auto; transform: translate(-50%, 0) rotate(-1deg); }
-#item-notice button {
-  padding: 5px 10px;
-  border: 1.5px solid #716c66;
-  border-radius: 5px;
-  background: #716c66;
-  color: #f9efdc;
-  font-family: inherit;
-  font-size: 14px;
-  cursor: pointer;
-}
-
 /* Fishing (scene/fishingGame.ts): no text on screen, the player reads the
    bobber and the rod. Touch screens get one round button (tap = strike, hold
    = reel); keyboards use Space, so the button stays hidden there. */
@@ -1457,41 +1415,6 @@ nav svg.bag {
   :is(nav, .nav-modal) .guest-modal li { font-size: 16px; }
 }
 
-/* Playing together: an invitation from another player (scene/together.ts). */
-.together-prompt {
-  position: fixed;
-  left: 50%;
-  top: max(18px, env(safe-area-inset-top));
-  z-index: 6;
-  display: none;
-  align-items: center;
-  gap: 10px;
-  max-width: calc(100vw - 32px);
-  padding: 8px 10px 8px 14px;
-  border-radius: 6px;
-  background-color: #f9efdc;
-  box-shadow: 2px 2px #716c66;
-  color: #716c66;
-  font-family: var(--default-font);
-  font-size: 16px;
-  transform: translateX(-50%);
-}
-.together-prompt.open { display: flex; }
-.together-prompt p { margin: 0; }
-.together-prompt b { color: #c0563b; }
-.together-prompt button {
-  flex: none;
-  padding: 5px 12px;
-  border: 1.5px solid #716c66;
-  border-radius: 5px;
-  background: #fffaf0;
-  color: #716c66;
-  font-family: inherit;
-  font-size: 15px;
-  cursor: pointer;
-}
-.together-prompt button[data-answer='yes'] { background: #716c66; color: #f9efdc; }
-.together-prompt button:active { transform: translateY(1px); }
 :is(nav, .nav-modal) .emote-menu kbd.together { background: #c0563b; }
 
 /* ---- screenshot (components/screenshot.ts) ---- */

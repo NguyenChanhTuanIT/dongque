@@ -6,8 +6,8 @@
 //    userData.pose, see engine/characters.ts).
 //
 // 2. Invitations through the relay (server/realm.mjs SOCIAL): the player picks
-//    an activity in the emote menu, it goes to the nearest player, who sees a
-//    prompt and accepts or declines. The relay checks the invitation and
+//    an activity in the emote menu, it goes to the nearest player, who sees an
+//    invitation (a line with two buttons in the chat box) and accepts or declines. The relay checks the invitation and
 //    confirms the acceptance to both, then each client plays its part:
 //      flower      the giver holds a flower out; the receiver then carries it
 //      ice cream   same with an ice cream (the giver needs the ice cream item)
@@ -52,6 +52,10 @@ const MENU: Record<number, number> = {
   [HAND_RIGHT_STATE]: HANDS,
   [PAIR_DANCE_STATE]: DANCE,
 };
+/** Text for HTML (player names are user input). */
+const escapeHtml = (text: string) =>
+  text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
+
 const INVITE_TEXT: Record<number, string> = {
   [FLOWER]: 'muốn tặng bạn một bông hoa',
   [ICECREAM]: 'mời bạn ăn kem',
@@ -107,7 +111,6 @@ export class Together {
   /** We pressed "accept" and wait for the relay's confirmation. */
   private _accepting: { from: string; activity: number } | null = null;
   private _partner: Partner | null = null;
-  private _prompt: HTMLDivElement;
   private _heart: CanvasTexture | null = null;
   private _rc = new Raycaster();
   private _v = new Vector3();
@@ -124,14 +127,8 @@ export class Together {
       this._end(false);
       this._renderPrompt();
     });
-    this._prompt = document.createElement('div');
-    this._prompt.className = 'together-prompt';
-    this._prompt.setAttribute('role', 'alertdialog');
-    this._prompt.addEventListener('click', (e) => {
-      const answer = (e.target as HTMLElement).closest<HTMLElement>('[data-answer]')?.dataset.answer;
-      if (answer) this._answer(answer === 'yes');
-    });
-    document.body.append(this._prompt);
+    // The invitation is a line of the chat box with its two buttons (chat.ts).
+    events.on('together_answer', (answer: string) => this._answer(answer === 'yes'));
   }
 
   // ---------------------------------------------------------------------------
@@ -273,27 +270,19 @@ export class Together {
     }
   }
 
+  /** The invitation as a chat line (chat.ts `chat_action`), gone once answered or expired. */
   private _renderPrompt() {
     const inc = this._incoming;
-    this._prompt.classList.toggle('open', !!inc);
     if (!inc) {
-      this._prompt.textContent = '';
+      events.emit('chat_action', 'together', '');
       return;
     }
     const gift = inc.activity === FLOWER || inc.activity === ICECREAM;
-    const text = document.createElement('p');
-    const who = document.createElement('b');
-    who.textContent = displayName(inc.from);
-    text.append(who, ` ${INVITE_TEXT[inc.activity]}`);
-    const yes = document.createElement('button');
-    yes.type = 'button';
-    yes.dataset.answer = 'yes';
-    yes.textContent = gift ? 'Nhận' : 'Đồng ý';
-    const no = document.createElement('button');
-    no.type = 'button';
-    no.dataset.answer = 'no';
-    no.textContent = 'Thôi';
-    this._prompt.replaceChildren(text, yes, no);
+    const html =
+      `<span>💞 <b>${escapeHtml(displayName(inc.from))}</b> ${escapeHtml(INVITE_TEXT[inc.activity])}</span>` +
+      `<button type="button" class="primary" data-emit="together_answer" data-arg="yes">${gift ? 'Nhận' : 'Đồng ý'}</button>` +
+      `<button type="button" data-emit="together_answer" data-arg="no">Thôi</button>`;
+    events.emit('chat_action', 'together', html);
   }
 
   // ---------------------------------------------------------------------------
