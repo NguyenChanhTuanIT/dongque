@@ -112,6 +112,8 @@ export class FollowCamera extends PerspectiveCamera {
 
   constructor() {
     super(45, client.screen.w / client.screen.h, 0.1, 1000);
+    this.fov = FollowCamera.fovFor(this.aspect);
+    this.updateProjectionMatrix();
     events.on('touch_start', this._touchStart);
     events.on('touch2_start', this._touchStart);
     events.on('wheel', this._onWheel);
@@ -341,6 +343,21 @@ export class FollowCamera extends PerspectiveCamera {
     }
   }
 
+  /**
+   * Vertical FOV for a given aspect. A fixed 45° vertical FOV makes a portrait
+   * phone see a very narrow horizontal slice of the world, so on phones we widen
+   * it (zoom out): a slightly wider base, then enough extra in portrait to keep
+   * a minimum horizontal FOV, capped to avoid fish-eye distortion.
+   */
+  static fovFor(aspect: number): number {
+    const mobile = client.device === 'mobile';
+    const base = mobile ? 56 : 45;
+    if (aspect >= 1) return base;
+    const minHFov = (mobile ? 55 : 45) * (Math.PI / 180);
+    const vFov = 2 * Math.atan(Math.tan(minHFov / 2) / aspect) * (180 / Math.PI);
+    return clamp(vFov, base, mobile ? 78 : 60);
+  }
+
   private _snap() {
     this._v0.copy(this.basePosition).sub(this.baseTarget);
     this.spherical.setFromVector3(this._v0);
@@ -353,6 +370,7 @@ export class FollowCamera extends PerspectiveCamera {
     if (!this._prevSize.equals(this._size)) {
       this._prevSize.copy(this._size);
       this.aspect = this._size.x / this._size.y;
+      this.fov = FollowCamera.fovFor(this.aspect);
       this.updateProjectionMatrix();
     }
   }

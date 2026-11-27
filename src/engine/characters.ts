@@ -441,6 +441,7 @@ export class Characters extends CharacterSkinnedMesh {
             onOwnOutfit: (outfit) => events.emit('mp_own_outfit', outfit),
             onKicked: (code) => events.emit('mp_kicked', code),
             onSocial: (kind, id, activity) => events.emit('mp_social', kind, charId(id), activity),
+            onOnline: (count) => events.emit('mp_online', count),
           });
         });
       },

@@ -10,7 +10,7 @@ import { ease, fit, lerpCoefFPS, lerpFPS, smoothstep } from '../core/math';
 import { events } from '../core/events';
 import { client } from '../core/client';
 import { textureLoader } from './loaders/textures';
-import { globalUBO } from './globals';
+import { globalUBO, globalUniforms } from './globals';
 import { type Touch } from './input';
 import type { CharacterInstance } from './characters';
 import { globalUBODeclaration } from '../scene/materials';
@@ -22,6 +22,21 @@ import blendmodesGLSL from '../scene/glsl/blendmodes.glsl?raw';
 
 
 const planeGeometry = new PlaneGeometry();
+
+/**
+ * On-screen sizes in CSS pixels. The shaders used to size the circles from the
+ * canvas resolution, which follows the adaptive DPR, so on phones (low DPR) the
+ * joystick grew to ~320px, nearly the whole screen width.
+ */
+const MOVE_CIRCLE_CSS = 150;
+const JUMP_CIRCLE_CSS = 110;
+/** UV offset of the inner knob at full deflection (see the move shader). */
+const KNOB_TRAVEL = 0.35;
+/** Finger drag (CSS px) for full deflection: matches the knob's on-screen travel. */
+const TOUCH_FULL_DRAG = Math.round(MOVE_CIRCLE_CSS * KNOB_TRAVEL);
+
+/** Device pixels per CSS pixel of the canvas (tracks the adaptive DPR). */
+const canvasDpr = () => globalUniforms.resolution.value.y / Math.max(1, client.screen.h);
 
 export class Circles extends Group {
   moveCircle!: Mesh;
@@ -46,18 +61,20 @@ export class Circles extends Group {
         tCircles: { value: textureLoader.load('controls/circles.png') },
         uInnerPos: { value: new Vector2() },
         uScale: { value: 1 },
+        uSize: { value: MOVE_CIRCLE_CSS },
         uAlpha: { value: 1 },
       },
       vertexShader: `
         ${globalUBODeclaration}
         uniform float uScale;
+        uniform float uSize; // diameter in device pixels
         varying vec2 vUv;
 
         void main() {
           vUv = uv;
           vec3 pos = position;
           pos.x /= resolution.x / resolution.y;
-          pos /= resolution.y / (640.0 * uScale);
+          pos /= resolution.y / (2.0 * uSize * uScale);
           gl_Position = modelMatrix * vec4(pos, 1.0);
         }
       `,
@@ -97,17 +114,19 @@ export class Circles extends Group {
       uniformsGroups: [globalUBO],
       uniforms: {
         uScale: { value: 1 },
+        uSize: { value: JUMP_CIRCLE_CSS },
         uAlpha: { value: 1 },
       },
       vertexShader: `
         ${globalUBODeclaration}
         uniform float uScale;
+        uniform float uSize; // diameter in device pixels
         varying vec2 vUv;
         void main() {
           vUv = uv;
           vec3 pos = position;
           pos.x /= resolution.x / resolution.y;
-          pos /= resolution.y / (400.0 * uScale);
+          pos /= resolution.y / (2.0 * uSize * uScale);
           gl_Position = modelMatrix * vec4(pos, 1.0);
         }
       `,
@@ -145,7 +164,10 @@ export class Circles extends Group {
     this._touchActive = touching ? 1 : lerpFPS(this._touchActive, 0, 0.25);
     if (!touching && this._touchActive < 0.001) this._touchActive = 0;
     this._touchPosition.lerp(touchDelta, lerpCoefFPS(0.2));
-    move.uniforms.uInnerPos.value.copy(this._touchPosition).multiplyScalar(0.35);
+    const dpr = canvasDpr();
+    move.uniforms.uSize.value = MOVE_CIRCLE_CSS * dpr;
+    jump.uniforms.uSize.value = JUMP_CIRCLE_CSS * dpr;
+    move.uniforms.uInnerPos.value.copy(this._touchPosition).multiplyScalar(KNOB_TRAVEL);
     move.uniforms.uInnerPos.value.y *= -1;
     this.moveCircle.visible = this._touchActive !== 0;
     move.uniforms.uScale.value = fit(this._touchActive, 0, 1, 0.75, 1);
@@ -216,7 +238,7 @@ export class Controls {
     this._characters = characters;
     this._mouseCenter = options.mouseCenter ?? new Vector2(0, -0.45);
     this._mouseToggleCb = options.mouseToggleCb;
-    this._controlTouchAmount = options.controlTouchAmount ?? 75;
+    this._controlTouchAmount = options.controlTouchAmount ?? TOUCH_FULL_DRAG;
     this._controlMouseAmount = options.controlMouseAmount ?? 200;
     this.circles = new Circles();
   }

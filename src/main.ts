@@ -34,7 +34,6 @@ async function start() {
 
   const onEasterEgg = () => ui.incrementEasterEggs();
   const onSecret = (message: string) => ui.showSecret(message);
-  const onTip = (message: string) => ui.showTip(message);
   const onMute = (muted: boolean) => ui.setMuted(muted);
   const onColor = (color: string) => ui.setCharacterColor(color);
   const onKeyUp = (event: KeyboardEvent) => {
@@ -43,7 +42,6 @@ async function start() {
 
   events.on('webgl_increase_easer_count', onEasterEgg);
   events.on('webgl_show_modal', onSecret);
-  events.on('webgl_show_tip', onTip);
   events.on('webgl_audio_update_mute', onMute);
   events.on('webgl_character_update_color', onColor);
   events.on('keyup', onKeyUp);
@@ -68,7 +66,6 @@ async function start() {
     stopClock();
     events.off('webgl_increase_easer_count', onEasterEgg);
     events.off('webgl_show_modal', onSecret);
-    events.off('webgl_show_tip', onTip);
     events.off('webgl_audio_update_mute', onMute);
     events.off('webgl_character_update_color', onColor);
     events.off('keyup', onKeyUp);

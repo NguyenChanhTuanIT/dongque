@@ -13,6 +13,8 @@
 //     8 WALLET   [UTF-8 JSON]                    flowers + daily rewards (null = signed out), see wallets.mjs
 //     9 SOCIAL   [u8 kind][u32 fromId][u8 activity]   play-together invitations, see "Together" below
 //    10 TIME     [f64 clientMs][f64 serverMs]    answer to a TIME ping (shared clock)
+//    11 ONLINE   [u16 count]                     players in the room (us included), sent on
+//                                                join and whenever it changes (at most once a tick)
 //   close codes: 4001 kicked by an admin · 4003 account banned (clients do not reconnect)
 //   client → server   [2] OUTFIT · [3] PROFILE [u16 n][Firebase ID token][u8 m][name] (n = m = 0: sign out)
 //                     · [4] CHAT [UTF-8 text] · [5] REWARD [u8 action] (0 status, 1 check-in, 2-4 online tier 0-2)
@@ -61,6 +63,7 @@ const MSG_NOTICE = 7;
 const MSG_WALLET = 8;
 const MSG_SOCIAL = 9;
 const MSG_TIME = 10;
+const MSG_ONLINE = 11;
 const CLIENT_OUTFIT = 2; // client → server: [2][u8 n][n bytes], item index per slot
 const CLIENT_PROFILE = 3;
 const CLIENT_CHAT = 4;
@@ -254,7 +257,7 @@ export function createRealm(options = {}) {
   function getRoom(name) {
     let room = rooms.get(name);
     if (!room) {
-      room = { players: new Set(), dirty: new Set() };
+      room = { players: new Set(), dirty: new Set(), countDirty: false };
       rooms.set(name, room);
     }
     return room;
@@ -609,6 +612,14 @@ export function createRealm(options = {}) {
         rooms.delete(name);
         continue;
       }
+      // Joins / leaves since the last tick: one ONLINE for the whole room.
+      if (room.countDirty) {
+        room.countDirty = false;
+        const online = Buffer.alloc(3);
+        online.writeUInt8(MSG_ONLINE, 0);
+        online.writeUInt16LE(Math.min(room.players.size, 0xffff), 1);
+        broadcast(room, online);
+      }
       if (room.dirty.size === 0) continue;
       const changed = [...room.dirty].filter((p) => p.state);
       room.dirty.clear();
@@ -681,6 +692,7 @@ export function createRealm(options = {}) {
     };
     if (nextId > 0xffffffff) nextId = 1;
     room.players.add(player);
+    room.countDirty = true;
 
     const welcome = Buffer.alloc(5);
     welcome.writeUInt8(MSG_WELCOME, 0);
@@ -791,6 +803,7 @@ export function createRealm(options = {}) {
     ws.on('close', () => {
       room.players.delete(player);
       room.dirty.delete(player);
+      room.countDirty = true;
       setUid(player, '');
       refreshOnline(walletIdOf(player)); // a guest wallet stops counting too
       const leave = Buffer.alloc(5);

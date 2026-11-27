@@ -25,6 +25,8 @@ const MSG_NOTICE = 7;
 const MSG_WALLET = 8;
 const MSG_SOCIAL = 9;
 const MSG_TIME = 10;
+/** [u16 count] players in the room, us included (server/realm.mjs). */
+const MSG_ONLINE = 11;
 const CLIENT_OUTFIT = 2; // client → server: [2][u8 n][n bytes]
 const CLIENT_PROFILE = 3;
 const CLIENT_CHAT = 4;
@@ -119,6 +121,8 @@ export interface SocketConnectionOptions extends ConnectionOptions {
   onKicked?: (code: number) => void;
   /** Play-together message (server/realm.mjs SOCIAL): kind, the other player's id, activity. */
   onSocial?: (kind: number, id: string, activity: number) => void;
+  /** Players in the room (us included); only remotes in view range are sent as characters. */
+  onOnline?: (count: number) => void;
 }
 
 export class SocketConnection implements MultiplayerConnection {
@@ -142,6 +146,7 @@ export class SocketConnection implements MultiplayerConnection {
   private _onLeave: (id: string) => void;
   private _onKicked: (code: number) => void;
   private _onSocial: (kind: number, id: string, activity: number) => void;
+  private _onOnline: (count: number) => void;
   /** Server time - performance.now(), from the ping with the shortest round trip. */
   private _clockOffset: number | null = null;
   private _clockRtt = Infinity;
@@ -174,6 +179,7 @@ export class SocketConnection implements MultiplayerConnection {
     this._onLeave = options.onLeave ?? noop;
     this._onKicked = options.onKicked ?? noop;
     this._onSocial = options.onSocial ?? noop;
+    this._onOnline = options.onOnline ?? noop;
     const url = new URL(options.url);
     url.searchParams.set('room', options.room ?? 'main');
     this._url = url.toString();
@@ -311,6 +317,10 @@ export class SocketConnection implements MultiplayerConnection {
           this._clockRtt = rtt;
           this._clockOffset = server + rtt / 2 - now;
         }
+        return;
+      }
+      case MSG_ONLINE: {
+        if (view.byteLength >= 3) this._onOnline(view.getUint16(1, true));
         return;
       }
       case MSG_NOTICE: {

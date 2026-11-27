@@ -1,7 +1,13 @@
 // Room-wide chat (bottom left). Enter opens the input, Enter sends, Escape
-// closes; the chat button in the nav does the same on touch screens. Recent
-// lines stay visible for a while, the full log shows while the input is open.
+// closes; on touch screens the "Chạm để chat" line under the log opens it.
+// Recent lines stay visible for a while, the full log shows while the input is open.
 // Every line also pops up as a bubble over the speaker (components/nametags.ts).
+//
+// The chat box is also where the game talks to the player (nothing floats over
+// the scene): notice lines (`game_hint`), one-time how-tos (`game_tip`, e.g. the
+// fishing pier) and, pinned above the input, the actions of the place the player
+// stands in (`chat_action`: sit / lie on a bench, fish on the pier…). Action
+// buttons carry `data-slot` (an emote slot) so touch screens can use them.
 
 import { events } from '../core/events';
 import { CHAT_MAX_CHARS, CLOSE_BANNED, NOTICE_BANNED, NOTICE_CHAT_TOO_FAST } from '../engine/multiplayer/socket';
@@ -11,12 +17,17 @@ import { announcementLine, isAnnouncement } from './announce';
 const MAX_LINES = 100;
 /** How long a line stays visible while the input is closed. */
 const LINE_VISIBLE_MS = 15_000;
+/** How-tos are longer: they stay a bit more. */
+const TIP_VISIBLE_MS = 30_000;
 
 export class ChatPanel {
   readonly root: HTMLDivElement;
   private readonly log: HTMLOListElement;
   private readonly form: HTMLFormElement;
   private readonly input: HTMLInputElement;
+  private readonly action: HTMLDivElement;
+  /** Place actions by source (bench, pier, coop…): HTML, '' when none. */
+  private readonly actions = new Map<string, string>();
   private open = false;
 
   /** `canOpen` is false while a full-screen overlay is up. */
@@ -26,12 +37,22 @@ export class ChatPanel {
     this.root.innerHTML =
       '<ol class="chat-log" aria-live="polite" aria-label="Tin nhắn"></ol>' +
       '<form class="chat-form" autocomplete="off"><input type="text" enterkeyhint="send" aria-label="Tin nhắn" placeholder="Nói gì đó… (Enter gửi, Esc đóng)"><button type="submit">Gửi</button></form>' +
-      '<div class="chat-hint">Nhấn <kbd>Enter</kbd> để chat</div>';
+      '<div class="chat-action" hidden></div>' +
+      '<button type="button" class="chat-hint"><span class="hint-keys">Nhấn <kbd>Enter</kbd> để chat</span><span class="hint-touch">💬 Chạm để chat</span></button>';
     parent.append(this.root);
     this.log = this.root.querySelector('.chat-log') as HTMLOListElement;
     this.form = this.root.querySelector('form') as HTMLFormElement;
     this.input = this.form.querySelector('input') as HTMLInputElement;
     this.input.maxLength = CHAT_MAX_CHARS;
+    this.action = this.root.querySelector('.chat-action') as HTMLDivElement;
+    const hint = this.root.querySelector('.chat-hint') as HTMLButtonElement;
+    hint.addEventListener('click', () => this.setOpen(true));
+    this.action.addEventListener('click', (e) => {
+      const slot = (e.target as HTMLElement).closest<HTMLElement>('[data-slot]')?.dataset.slot;
+      if (slot) events.emit('webgl_character_emote', Number(slot));
+    });
+    // Keep the game (not a button) focused: keys keep moving the character.
+    this.action.addEventListener('pointerdown', (e) => e.preventDefault());
 
     this.form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -72,6 +93,15 @@ export class ChatPanel {
     });
     // Short game hints (e.g. stone benches: "move closer", "bench is full").
     events.on('game_hint', (text: string) => this.addLine('', text, 'system'));
+    // One-time how-tos of a place (scene/spots.ts): first line bold, line breaks kept.
+    events.on('game_tip', (text: string) => this.addLine('', text, 'tip'));
+    events.on('chat_action', (source: string, html: string) => {
+      if ((this.actions.get(source) ?? '') === html) return;
+      this.actions.set(source, html);
+      const all = [...this.actions.values()].filter(Boolean).join('');
+      this.action.innerHTML = all;
+      this.action.hidden = !all;
+    });
     events.on('auth_banned', () => this.addLine('', 'Tài khoản này đã bị khoá nên đã được đăng xuất.', 'system'));
   }
 
@@ -107,7 +137,7 @@ export class ChatPanel {
     });
   }
 
-  private addLine(author: string, text: string, kind: '' | 'self' | 'system') {
+  private addLine(author: string, text: string, kind: '' | 'self' | 'system' | 'tip') {
     const li = document.createElement('li');
     if (kind) li.className = kind;
     if (author) {
@@ -115,11 +145,18 @@ export class ChatPanel {
       who.textContent = author;
       li.append(who, ': ');
     }
-    li.append(text);
+    if (kind === 'tip') {
+      const [title, ...rest] = text.split('\n');
+      const head = document.createElement('b');
+      head.textContent = title;
+      li.append(head, rest.join('\n')); // the title is a block: no break after it
+    } else {
+      li.append(text);
+    }
     const stick = this.log.scrollTop + this.log.clientHeight >= this.log.scrollHeight - 4;
     this.log.append(li);
     while (this.log.children.length > MAX_LINES) this.log.firstElementChild?.remove();
     if (stick || !this.open) this.log.scrollTop = this.log.scrollHeight;
-    window.setTimeout(() => li.classList.add('old'), LINE_VISIBLE_MS);
+    window.setTimeout(() => li.classList.add('old'), kind === 'tip' ? TIP_VISIBLE_MS : LINE_VISIBLE_MS);
   }
 }

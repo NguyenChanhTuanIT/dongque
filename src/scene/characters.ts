@@ -3,6 +3,7 @@
 
 import { Color, InstancedBufferAttribute, Mesh, Vector3 } from 'three';
 import { events } from '../core/events';
+import { client } from '../core/client';
 import { geometryLoader } from '../engine/loaders/geometries';
 import { Characters } from '../engine/characters';
 import { depthCharsMaterial, phongMaterial } from './materials';
@@ -138,7 +139,9 @@ export class CharactersModule extends SceneModule {
       initialPosition: config.player.spawn,
       initialRadius: config.player.spawnRadius,
       camera: this.scene.camera,
-      relativeCameraPosition: new Vector3(0, 1, -5.75),
+      // Phones sit the camera further back so more of the scene fits on a small screen.
+      relativeCameraPosition:
+        client.device === 'mobile' ? new Vector3(0, 1.4, -7.75) : new Vector3(0, 1, -5.75),
       lookatMeshOffset: new Vector3(0, 1.1, 0.5),
       initialData: { seed: this.seed },
       customAttribUpdate: (local, _clientId, instanceId) => {

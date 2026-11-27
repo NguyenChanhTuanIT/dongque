@@ -155,25 +155,16 @@ export function benchMeshes(): Group {
 
 /**
  * F / L (or the emote menu): sit on a free seat of the nearest bench, or
- * lie on an empty one; again (or moving) stands up. A small prompt shows the
- * keys near a bench.
+ * lie on an empty one; again (or moving) stands up. Near a bench the chat
+ * box shows the two actions (keys + tappable buttons, components/chat.ts).
  */
 export class BenchSeating {
-  private _prompt: HTMLDivElement;
   private _promptText = '';
   private _sitSlot = EMOTES.findIndex((e) => e.state === BENCH_SIT_STATE) + 1;
   private _lieSlot = EMOTES.findIndex((e) => e.state === BENCH_LIE_STATE) + 1;
 
   constructor(private _characters: Characters) {
     this._characters.emoteInterceptors.push(this._onEmote);
-    this._prompt = document.createElement('div');
-    this._prompt.className = 'bench-prompt';
-    this._prompt.setAttribute('aria-live', 'polite');
-    this._prompt.addEventListener('click', (e) => {
-      const slot = (e.target as HTMLElement).closest<HTMLElement>('[data-slot]')?.dataset.slot;
-      if (slot) events.emit('webgl_character_emote', Number(slot));
-    });
-    document.body.append(this._prompt);
   }
 
   /** Nearest bench within REACH of the local player. */
@@ -254,25 +245,25 @@ export class BenchSeating {
     return true;
   };
 
-  /** Per frame: the key prompt near a bench. */
+  /** Per frame: the bench actions in the chat box (sent only when they change). */
   update() {
     const chars = this._characters;
     let text = '';
     const onBench = chars.local.userData.a === BENCH_SIT_STATE || chars.local.userData.a === BENCH_LIE_STATE;
     if (chars.seated && onBench) {
-      text = `<span>Di chuyển để đứng dậy</span>`;
+      text = `<span>🪑 Di chuyển để đứng dậy</span>`;
     } else if (chars.seated) {
       text = ''; // seated for something else (e.g. dancing together)
     } else if (this._nearestBench() && chars.local.userData.a !== 1) {
       const sit = EMOTES[this._sitSlot - 1];
       const lie = EMOTES[this._lieSlot - 1];
       text =
-        `<button type="button" data-slot="${this._sitSlot}"><kbd>${sit.key}</kbd>${sit.label}</button>` +
-        `<button type="button" data-slot="${this._lieSlot}"><kbd>${lie.key}</kbd>${lie.label}</button>`;
+        `<span>🪑 Ghế đá</span>` +
+        `<button type="button" data-slot="${this._sitSlot}" title="${sit.label}"><kbd>${sit.key}</kbd>Ngồi</button>` +
+        `<button type="button" data-slot="${this._lieSlot}" title="${lie.label}"><kbd>${lie.key}</kbd>Nằm</button>`;
     }
     if (text === this._promptText) return;
     this._promptText = text;
-    this._prompt.innerHTML = text;
-    this._prompt.classList.toggle('open', text !== '');
+    events.emit('chat_action', 'bench', text);
   }
 }

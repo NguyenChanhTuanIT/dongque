@@ -574,6 +574,28 @@ nav svg.emote {
   font-family: inherit;
   font-size: 12px;
 }
+/* Phones (narrow or landscape): the wrapping columns ran off the left edge of the
+   screen. Use two fixed columns that scroll inside the screen instead. */
+@media (max-width: 560px), (max-height: 560px) {
+  :is(nav, .nav-modal) .emote-menu.open {
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+    justify-items: end;
+    align-content: start;
+    gap: 6px;
+    right: 42px; /* 48px minus the padding below */
+    box-sizing: border-box;
+    max-width: calc(100vw - 80px);
+    max-height: calc(100vh - 110px);
+    max-height: calc(100dvh - 110px);
+    padding: 6px 6px 10px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+  :is(nav, .nav-modal) .emote-menu button { gap: 6px; padding: 5px 9px 5px 5px; font-size: 15px; }
+  :is(nav, .nav-modal) .emote-menu kbd { min-width: 16px; height: 16px; font-size: 11px; }
+}
 :is(nav, .nav-modal) .look-menu {
   position: absolute;
   right: 48px;
@@ -857,8 +879,10 @@ nav .cnt {
 .button:hover { transform: rotate(10deg) translateY(-2px); }
 .button:active, .button-close:active { transform: rotate(10deg) translateY(2px); box-shadow: 1px 1px #716c66; }
 
-/* ---- chat button ---- */
-nav svg.chat {
+
+/* ---- settings (⚙) and help (?) buttons + their menus (ui.ts navMenu) ----
+   The menus reuse the emote menu look; entries get a small icon in front. */
+nav svg:is(.gear, .help) {
   display: block;
   width: 20px;
   height: 20px;
@@ -866,6 +890,85 @@ nav svg.chat {
   position: absolute;
   top: 6px;
   left: 6px;
+}
+nav .nav-menu .menu-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+nav .nav-menu .menu-icon svg {
+  display: block;
+  position: static;
+  width: 18px;
+  height: 18px;
+  transform: none;
+}
+nav .nav-menu .menu-icon svg.sound { height: 14px; }
+nav .nav-menu .color-square {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 1.5px solid #716c66;
+}
+
+/* ---- help panel (help.ts) ---- */
+.nav-modal .help-menu .character-tabs { flex-wrap: wrap; }
+:is(nav, .nav-modal) .help-menu [role='tabpanel'] { gap: 10px; }
+:is(nav, .nav-modal) .help-menu kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  margin: 0 1px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  background: #716c66;
+  color: #f9efdc;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  vertical-align: 1px;
+}
+:is(nav, .nav-modal) .help-menu kbd.together { background: #c0563b; }
+:is(nav, .nav-modal) .help-menu button.primary { background: #716c66; color: #f9efdc; }
+:is(nav, .nav-modal) .help-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+:is(nav, .nav-modal) .help-rows li {
+  display: grid;
+  grid-template-columns: 110px 1fr 1fr;
+  gap: 4px 16px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-bottom: 1px dashed rgba(113, 108, 102, 0.3);
+  font-size: 15px;
+  line-height: 1.4;
+}
+:is(nav, .nav-modal) .help-rows li:last-child { border-bottom: none; }
+:is(nav, .nav-modal) .help-nav li { grid-template-columns: 130px 1fr; }
+:is(nav, .nav-modal) .help-rows b { font-weight: 600; }
+:is(nav, .nav-modal) .help-emotes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  align-items: start;
+  gap: 8px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+}
+:is(nav, .nav-modal) .help-emotes li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+:is(nav, .nav-modal) .help-emotes small { flex-basis: 100%; padding-left: 30px; font-size: 12px; opacity: 0.75; }
+@media (max-width: 560px) {
+  :is(nav, .nav-modal) .help-rows li,
+  :is(nav, .nav-modal) .help-nav li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
 
 /* ---- text inputs stay selectable ---- */
@@ -985,14 +1088,77 @@ nav input,
   font-size: 16px;
   cursor: pointer;
 }
-#chat .chat-hint { font-size: 14px; color: #f9efdc; text-shadow: 1px 1px #716c66; }
+#chat .chat-log li.tip { white-space: pre-line; font-size: 15px; }
+#chat .chat-log li.tip b { display: block; color: #4d4945; font-weight: 600; }
+/* "Nhấn Enter để chat" (keyboards) / "Chạm để chat" (touch screens): opens the input. */
+#chat .chat-hint {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 14px;
+  color: #f9efdc;
+  text-shadow: 1px 1px #716c66;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+#chat .chat-hint .hint-touch { display: none; }
 #chat.open .chat-hint { display: none; }
+/* Actions of the place the player stands in (bench, pier, coop): pinned above the input. */
+#chat .chat-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+#chat .chat-action[hidden] { display: none; }
+#chat .chat-action span {
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: rgba(249, 239, 220, 0.88);
+  font-size: 15px;
+}
+#chat .chat-action button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px 5px 6px;
+  border: none;
+  border-radius: 5px;
+  background-color: #f9efdc;
+  box-shadow: 2px 2px #716c66;
+  color: #716c66;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+}
+#chat .chat-action button:active { transform: translateY(2px); box-shadow: 1px 1px #716c66; }
+#chat .chat-action kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: #716c66;
+  color: #f9efdc;
+  font-family: inherit;
+  font-size: 12px;
+}
 #chat.open .chat-form { display: flex; }
 #chat.open .chat-log { overflow-y: auto; pointer-events: auto; }
 #chat.open .chat-log li.old { opacity: 0.9; }
-/* Touch screens have no Enter key: the nav chat button opens it instead. */
+/* Touch screens have no Enter key: tap the hint instead (bigger target). */
 @media (hover: none), (pointer: coarse) {
-  #chat .chat-hint { display: none; }
+  #chat .chat-hint .hint-keys { display: none; }
+  #chat .chat-hint .hint-touch { display: inline; padding: 6px 10px; border-radius: 5px; background: rgba(113, 108, 102, 0.55); text-shadow: none; font-size: 15px; }
+  #chat .chat-action kbd { display: none; } /* no keys to press */
+  #chat .chat-action button { padding: 7px 14px; }
 }
 
 /* ---- daily rewards (flower button) ---- */
@@ -1163,50 +1329,6 @@ nav svg.bag {
   font-family: inherit;
   font-size: 14px;
   cursor: pointer;
-}
-
-/* Stone benches: key prompt near a bench (scene/benches.ts). */
-.bench-prompt {
-  position: fixed;
-  left: 50%;
-  bottom: max(96px, calc(env(safe-area-inset-bottom) + 96px));
-  z-index: 5;
-  display: none;
-  gap: 10px;
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-.bench-prompt.open { display: flex; }
-.bench-prompt button,
-.bench-prompt span {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px 6px 7px;
-  border: none;
-  border-radius: 5px;
-  background-color: #f9efdc;
-  box-shadow: 2px 2px #716c66;
-  color: #716c66;
-  font-family: var(--default-font);
-  font-size: 16px;
-  line-height: 1;
-  white-space: nowrap;
-  pointer-events: auto;
-  cursor: pointer;
-}
-.bench-prompt span { padding-left: 12px; cursor: default; }
-.bench-prompt button:active { transform: translateY(2px); box-shadow: 1px 1px #716c66; }
-.bench-prompt kbd {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: #716c66;
-  color: #f9efdc;
-  font-family: inherit;
-  font-size: 12px;
 }
 
 /* Fishing (scene/fishingGame.ts): no text on screen, the player reads the
@@ -1590,3 +1712,47 @@ nav svg.letter {
   cursor: pointer;
 }
 .welcome-modal .thank-close:active { transform: translateY(2px); box-shadow: 1px 1px #4d4945; }
+
+/* ---- online watermark (components/onlineCount.ts) ----
+   Faint text in the free bottom-right corner (nav top right, chat bottom left):
+   part of the scene, not a control, so it never takes clicks. */
+#online-count {
+  position: absolute;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 1;
+  display: none;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--default-font);
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: #f9efdc;
+  text-shadow: 1px 1px #716c66;
+  opacity: 0.72;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: opacity 0.6s;
+}
+#online-count.visible { display: flex; }
+#online-count[hidden] { display: none; }
+#online-count .online-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #7fc48f;
+  box-shadow: 1px 1px #716c66;
+  animation: online-breathe 3s ease-in-out infinite;
+}
+@keyframes online-breathe {
+  50% { opacity: 0.45; }
+}
+#online-count.bump { animation: online-bump 1.2s ease-out; }
+@keyframes online-bump {
+  20% { opacity: 1; transform: translateY(-2px); }
+}
+/* Touch screens: the fishing button sits bottom right, above this; keep it small. */
+@media (max-width: 560px) {
+  #online-count { font-size: 13px; }
+}

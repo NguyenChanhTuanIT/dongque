@@ -117,7 +117,7 @@ export class FeedbackPanel {
           <small class="feedback-count" aria-live="polite"></small>
           <button type="submit" class="primary">Gửi góp ý</button>
         </div>
-        <p class="rewards-note">Mỗi ngày bạn gửi được 1 góp ý. Đội ngũ phát triển đọc tất cả góp ý.</p>
+      </p>
         <p class="rewards-toast" role="alert"></p>
       </form>`;
     const form = this.content.querySelector('form') as HTMLFormElement;

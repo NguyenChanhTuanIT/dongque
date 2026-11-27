@@ -14,6 +14,8 @@ import { RewardsPanel, flowerIcon } from './rewards';
 import { ShopPanel, bagIcon } from './shop';
 import { ScreenshotTool, cameraIcon } from './screenshot';
 import { FeedbackPanel, letterIcon } from './feedback';
+import { HelpPanel, helpIcon } from './help';
+import { OnlineCount } from './onlineCount';
 import { WelcomeLetter } from './welcomeLetter';
 import { addPanelBar } from './panelBar';
 import { Wardrobe } from './wardrobe';
@@ -54,8 +56,20 @@ const speakerIcon = '<svg class="sound sound2" viewBox="0 0 17 13" aria-hidden="
 const mutedIcon = '<svg class="sound sound2" viewBox="0 0 17 13" aria-hidden="true"><path d="M6.96.228 2.9 3.332H.938A.94.94 0 0 0 0 4.27v4.384c0 .511.41.938.938.938h1.979l4.042 3.104a1 1 0 0 0 1.74-.853V1.08C8.682.177 7.659-.318 6.96.228Z" fill="#716C66"/></svg>';
 const infoIcon = '<svg class="info" viewBox="0 0 4 18" aria-hidden="true"><path d="M2 6a2 2 0 0 1 2 2v6.818a2 2 0 1 1-4 0V8a2 2 0 0 1 2-2ZM4 2a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z" fill="#716C66"/></svg>';
 const emoteIcon = '<svg class="emote" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M10 0a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm-3.2 6.2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm6.4 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM5.6 12a.9.9 0 0 0-.8 1.3A5.8 5.8 0 0 0 10 16.3a5.8 5.8 0 0 0 5.2-3 .9.9 0 1 0-1.6-.8A4 4 0 0 1 10 14.5a4 4 0 0 1-3.6-2 .9.9 0 0 0-.8-.5Z" fill="#716C66"/></svg>';
-const chatIcon = '<svg class="chat" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5c5 0 9 3.2 9 7.3s-4 7.2-9 7.2c-.9 0-1.8-.1-2.6-.3L3 18.2l1.1-3.9C2.2 13 1 11 1 8.8 1 4.7 5 1.5 10 1.5Z" fill="#716C66"/></svg>';
 const closeIcon = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="m1.5 1.5 15 15m0-15-15 15" stroke="#989389" stroke-width="2" stroke-linecap="round"/></svg>';
+const gearIcon = '<svg class="gear" viewBox="0 0 20 20" aria-hidden="true"><g fill="#716C66"><circle cx="10" cy="10" r="6.4"/><rect x="8.3" y="1" width="3.4" height="18" rx="1"/><rect x="8.3" y="1" width="3.4" height="18" rx="1" transform="rotate(45 10 10)"/><rect x="8.3" y="1" width="3.4" height="18" rx="1" transform="rotate(90 10 10)"/><rect x="8.3" y="1" width="3.4" height="18" rx="1" transform="rotate(135 10 10)"/></g><circle cx="10" cy="10" r="2.6" fill="#f9efdc"/></svg>';
+const bookIcon = '<svg class="book" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 3.2C4.6 2.4 7.3 2.6 9.2 4v13c-2-1.3-4.6-1.5-7.2-.7V3.2Zm16 0c-2.6-.8-5.3-.6-7.2.8v13c2-1.3 4.6-1.5 7.2-.7V3.2Z" fill="#716C66"/></svg>';
+
+/** A menu entry: `icon` (HTML, may be empty) then the label. */
+function menuItem(menu: HTMLElement, icon: string, label: string): HTMLButtonElement {
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.setAttribute('role', 'menuitem');
+  item.innerHTML = icon;
+  item.append(label);
+  menu.append(item);
+  return item;
+}
 
 /** Credit for the original work; fixed, not part of the remote config. */
 const ORIGINAL_CREDIT =
@@ -80,12 +94,11 @@ export class UiController {
   private readonly infoModal: HTMLDivElement;
   private readonly infoPanel: HTMLElement;
   private readonly secretPanel: HTMLElement;
-  /** The popup shows a how-to, not a secret. */
-  private tipOpen = false;
   private readonly colorSquare: HTMLDivElement;
   private readonly soundButton: HTMLButtonElement;
   private readonly count: HTMLDivElement;
   private readonly chat: ChatPanel;
+  private readonly online: OnlineCount;
   private readonly authModal: AuthModal;
   private easterEggs = 0;
   private totalEasterEggs = 0;
@@ -117,71 +130,74 @@ export class UiController {
     else loaderTitle.style.visibility = 'hidden';
     root.append(this.loader);
 
+    // Five buttons; the rest sits in the menus of ⚙ (settings) and ? (help):
+    //   ⚙ Cài đặt   → Nhân vật & tủ đồ, Cửa hàng, Âm thanh
+    //   🙂 Biểu cảm (E) · 🌸 Quà mỗi ngày (red dot = a reward waiting) · 📷 Chụp ảnh
+    //   ? Trợ giúp  → Hướng dẫn chơi, Giới thiệu, Góp ý
+    // No chat button: Enter opens the chat, touch screens tap "Chạm để chat"
+    // in the chat box (chat.ts), which also shows the actions of the place.
     this.nav = document.createElement('nav');
-    this.nav.innerHTML = '<button class="button" type="button" aria-label="toggle sound"></button><button class="button" type="button" aria-label="character" title="Nhân vật & tủ đồ"><div class="color-square"></div></button><button class="button" type="button" aria-label="about">' + infoIcon + '</button><button class="button" type="button" aria-label="emote (E)" title="Biểu cảm (E)">' + emoteIcon + '</button><button class="button" type="button" aria-label="chat (Enter)" title="Chat (Enter)">' + chatIcon + '</button><button class="button" type="button" aria-label="daily rewards" title="Quà mỗi ngày">' + flowerIcon + '</button><button class="button" type="button" aria-label="shop" title="Cửa hàng">' + bagIcon + '</button><button class="button" type="button" aria-label="screenshot" title="Chụp ảnh màn hình">' + cameraIcon + '</button><button class="button" type="button" aria-label="feedback" title="Góp ý">' + letterIcon + '</button><div class="cnt">0/0</div>';
+    const navBtn = (label: string, title: string, icon: string) =>
+      `<button class="button" type="button" aria-label="${label}" title="${title}">${icon}</button>`;
+    this.nav.innerHTML =
+      navBtn('settings', 'Cài đặt', gearIcon) +
+      navBtn('emote (E)', 'Biểu cảm (E)', emoteIcon) +
+      navBtn('daily rewards', 'Quà mỗi ngày', flowerIcon) +
+      navBtn('screenshot', 'Chụp ảnh màn hình', cameraIcon) +
+      navBtn('help', 'Trợ giúp', helpIcon) +
+      '<div class="cnt">0/0</div>';
     root.append(this.nav);
-    this.soundButton = this.nav.querySelectorAll('button')[0];
-    const colorButton = this.nav.querySelectorAll('button')[1];
-    const infoButton = this.nav.querySelectorAll('button')[2];
-    this.colorSquare = colorButton.querySelector('.color-square') as HTMLDivElement;
+    const navButton = (label: string) => this.nav.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
     this.count = this.nav.querySelector('.cnt') as HTMLDivElement;
     // Secrets counter ("0/5") hidden on screen; finding a secret still counts and shows its modal.
     this.count.hidden = true;
-    this.soundButton.innerHTML = speakerIcon;
+
+    // ---- ⚙ settings menu ----
+    const settingsButton = navButton('settings');
+    const settingsMenu = this.navMenu(settingsButton, 'Cài đặt');
+    const colorButton = menuItem(settingsMenu.menu, '<span class="menu-icon"><div class="color-square"></div></span>', 'Nhân vật & tủ đồ');
+    const shopButton = menuItem(settingsMenu.menu, `<span class="menu-icon">${bagIcon}</span>`, 'Cửa hàng');
+    this.soundButton = menuItem(settingsMenu.menu, '', '');
+    this.soundButton.dataset.keepOpen = '';
+    this.soundButton.setAttribute('role', 'menuitemcheckbox');
+    this.colorSquare = colorButton.querySelector('.color-square') as HTMLDivElement;
+    this.setMuted(true); // audio.ts starts muted (sound needs a user gesture)
     this.soundButton.addEventListener('click', () => events.emit('webgl_audio_mute_toggle'));
-    infoButton.addEventListener('click', () => this.toggleOverlay('about'));
-    const emoteButton = this.nav.querySelectorAll('button')[3];
-    emoteButton.setAttribute('aria-haspopup', 'menu');
-    emoteButton.setAttribute('aria-expanded', 'false');
-    const emoteMenu = document.createElement('div');
-    emoteMenu.className = 'emote-menu';
-    emoteMenu.setAttribute('role', 'menu');
+
+    // ---- 🙂 emote menu ----
+    const emoteButton = navButton('emote (E)');
+    const emoteMenu = this.navMenu(emoteButton, 'Biểu cảm');
     EMOTE_MENU.forEach((label, i) => {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.setAttribute('role', 'menuitem');
-      item.innerHTML = EMOTES[i].key ? `<kbd>${EMOTES[i].key}</kbd>` : '<kbd class="together">♥</kbd>';
-      item.append(label);
-      item.addEventListener('click', () => {
-        events.emit('webgl_character_emote', i + 1);
-        setMenu(false);
-      });
-      emoteMenu.append(item);
+      const item = menuItem(emoteMenu.menu, EMOTES[i].key ? `<kbd>${EMOTES[i].key}</kbd>` : '<kbd class="together">♥</kbd>', label);
+      item.addEventListener('click', () => events.emit('webgl_character_emote', i + 1));
     });
     // Picnic emotes (fishing, guitar, kite, ice cream) need their item: the menu
     // does not lock them; choosing one without the item shows a notice instead.
     this.setupNotices(root);
-    this.nav.append(emoteMenu);
-    const setMenu = (open: boolean) => {
-      emoteMenu.style.top = `${emoteButton.offsetTop - 4}px`;
-      emoteMenu.classList.toggle('open', open);
-      emoteButton.setAttribute('aria-expanded', String(open));
-    };
-    emoteButton.addEventListener('click', () => setMenu(!emoteMenu.classList.contains('open')));
-    document.addEventListener('pointerdown', (e) => {
-      if (!emoteMenu.contains(e.target as Node) && e.target !== emoteButton && !emoteButton.contains(e.target as Node)) setMenu(false);
-    });
-    events.on('keyup', (e: KeyboardEvent) => {
-      if (e.code === 'Escape') setMenu(false);
-    });
+
+    // ---- ? help menu ----
+    const helpButton = navButton('help');
+    const helpMenu = this.navMenu(helpButton, 'Trợ giúp');
+    const guideButton = menuItem(helpMenu.menu, `<span class="menu-icon">${bookIcon}</span>`, 'Hướng dẫn chơi');
+    const aboutButton = menuItem(helpMenu.menu, `<span class="menu-icon">${infoIcon}</span>`, 'Giới thiệu');
+    const feedbackButton = menuItem(helpMenu.menu, `<span class="menu-icon">${letterIcon}</span>`, 'Góp ý');
+    aboutButton.addEventListener('click', () => this.toggleOverlay('about'));
+
     this.authModal = new AuthModal(root);
     // Any modal overlay (nav panels, sign-in; see overlay.ts) hides the nav, like the info modal.
     events.on('ui_overlay', (open: boolean) => this.nav.classList.toggle('visible', !open));
-    // The colour-square button opens the character panel (with the wardrobe).
+    // "Nhân vật & tủ đồ" opens the character panel (with the wardrobe).
     this.setupLookMenu(colorButton);
 
     new NameTags(root);
+    this.online = new OnlineCount(root);
     this.chat = new ChatPanel(root, () => !this.overlayOpen && !this.authModal.isOpen);
-    const navButton = (label: string) => this.nav.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
-    const chatButton = navButton('chat (Enter)');
-    // Keep focus in the chat input while pressing the button (it toggles instead).
-    chatButton.addEventListener('pointerdown', (e) => e.preventDefault());
-    chatButton.addEventListener('click', () => this.chat.toggle());
     const openAuth = (mode: 'login' | 'register') => this.authModal.open(mode);
     new RewardsPanel(this.nav, navButton('daily rewards'), openAuth);
-    new ShopPanel(this.nav, navButton('shop'), openAuth);
+    new ShopPanel(this.nav, shopButton, openAuth);
     new ScreenshotTool(navButton('screenshot'));
-    new FeedbackPanel(this.nav, navButton('feedback'));
+    new HelpPanel(this.nav.parentElement ?? this.nav, guideButton);
+    new FeedbackPanel(this.nav, feedbackButton);
     // A thank-you letter for coming by, once connected (once per visit).
     new WelcomeLetter(root);
     // Guests: "Lưu dữ liệu của bạn" modal at the first flower / item (instead of a browser prompt on close).
@@ -204,7 +220,43 @@ export class UiController {
   }
 
   /**
-   * Character panel (colour-square button), two tabs:
+   * A small menu popping out to the left of a nav button (emotes, settings,
+   * help). One menu open at a time; it closes on a pick (unless the item has
+   * `data-keep-open`, like the sound toggle), outside presses and Escape.
+   */
+  private readonly menus: Array<(open: boolean) => void> = [];
+  private navMenu(button: HTMLButtonElement, label: string) {
+    const menu = document.createElement('div');
+    menu.className = 'emote-menu nav-menu';
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', label);
+    this.nav.append(menu);
+    button.setAttribute('aria-haspopup', 'menu');
+    button.setAttribute('aria-expanded', 'false');
+    const setOpen = (open: boolean) => {
+      if (open) this.menus.forEach((close) => close(false));
+      menu.style.top = `${button.offsetTop - 4}px`;
+      menu.classList.toggle('open', open);
+      button.setAttribute('aria-expanded', String(open));
+    };
+    this.menus.push(setOpen);
+    button.addEventListener('click', () => setOpen(!menu.classList.contains('open')));
+    // Bubbles after the item's own handlers (which may open a panel).
+    menu.addEventListener('click', (e) => {
+      const item = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
+      if (item && item.dataset.keepOpen === undefined) setOpen(false);
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (!menu.contains(e.target as Node) && !button.contains(e.target as Node)) setOpen(false);
+    });
+    events.on('keyup', (e: KeyboardEvent) => {
+      if (e.code === 'Escape') setOpen(false);
+    });
+    return { menu, setOpen };
+  }
+
+  /**
+   * Character panel ("Nhân vật & tủ đồ" in the settings menu), two tabs:
    *   - Nhân vật: boy / girl presets and hair style.
    *   - Tủ đồ: every item the player has in one picture grid ordered by type
    *     (Wardrobe), then the clothes colour and a link to the shop.
@@ -631,12 +683,11 @@ export class UiController {
     this.loader.remove();
     this.nav.classList.add('visible');
     this.chat.root.classList.add('visible');
+    this.online.root.classList.add('visible');
   }
 
   showSecret(message: string) {
     if (this.overlayOpen) this.closeOverlay();
-    this.tipOpen = false;
-    this.secretPanel.style.whiteSpace = '';
     this.secretPanel.textContent = message;
     this.secretModal.classList.add('visible');
     this.count.textContent = this.easterEggs + '/' + this.totalEasterEggs;
@@ -645,27 +696,16 @@ export class UiController {
     window.setTimeout(() => { this.easterEggs = Math.min(this.totalEasterEggs, this.easterEggs + 1); this.count.textContent = this.easterEggs + '/' + this.totalEasterEggs; }, 750);
   }
 
-  /**
-   * A one-time how-to (chicken coop, fishing pier): the same popup as a found
-   * secret, without counting one. Line breaks are kept.
-   */
-  showTip(message: string) {
-    if (this.overlayOpen) this.closeOverlay();
-    this.tipOpen = true;
-    this.secretPanel.textContent = message;
-    this.secretPanel.style.whiteSpace = 'pre-line';
-    this.secretModal.classList.add('visible');
-    window.clearTimeout(this.secretTimer);
-    this.secretTimer = window.setTimeout(() => this.closeSecret(), 15000);
-  }
-
   incrementEasterEggs() {
     this.totalEasterEggs += 1;
     this.count.textContent = `${this.easterEggs}/${this.totalEasterEggs}`;
   }
 
   setMuted(muted: boolean) {
-    this.soundButton.innerHTML = muted ? speakerIcon : mutedIcon;
+    // speakerIcon is the crossed-out one (shown while muted).
+    this.soundButton.innerHTML = `<span class="menu-icon">${muted ? speakerIcon : mutedIcon}</span>`;
+    this.soundButton.append(muted ? 'Âm thanh: Tắt' : 'Âm thanh: Bật');
+    this.soundButton.setAttribute('aria-checked', String(!muted));
   }
 
   setCharacterColor(color: string) {
@@ -701,10 +741,8 @@ export class UiController {
   }
 
   private closeSecret() {
-    const wasTip = this.tipOpen;
-    this.tipOpen = false;
     if (!this.secretModal.classList.contains('visible')) return;
     this.secretModal.classList.remove('visible');
-    if (!wasTip && this.easterEggs >= this.totalEasterEggs) this.toggleOverlay('congrats');
+    if (this.easterEggs >= this.totalEasterEggs) this.toggleOverlay('congrats');
   }
 }
