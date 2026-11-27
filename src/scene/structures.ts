@@ -54,11 +54,15 @@ export class Warehouses extends SceneModule {
 
 /**
  * Machine instances taken off the map (matched by position, within 1 m): the
- * electric box with two pipes standing on the beach. `yaw` is its rotation in
+ * electric box with two pipes standing on the beach, and the generator by the spawn. `yaw` is its rotation in
  * machine-instances.bin; the walk collider loses its triangles too
  * (cutRemovedMachines), so nothing invisible is left to bump into.
  */
-const REMOVED_MACHINES = [{ x: 57.12, y: 0, z: -29.92, yaw: Math.PI / 2 }];
+const REMOVED_MACHINES = [
+  { x: 57.12, y: 0, z: -29.92, yaw: Math.PI / 2 },
+  // the generator by the spawn, at the roadside
+  { x: 0.3, y: 1.66, z: -56.46, yaw: Math.PI / 2 },
+];
 /** machine.bin's local bounds (a bit larger): ±2.17 × 0…1.87 × ±0.8 m. */
 const MACHINE_HALF_X = 2.4;
 const MACHINE_HALF_Z = 1.0;

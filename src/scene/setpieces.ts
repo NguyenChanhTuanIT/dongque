@@ -2,7 +2,20 @@
 // skinned animated characters and interactable secrets (the hidden
 // easter-egg modal triggers).
 
-import { AnimationMixer, BoxGeometry, BufferGeometry, Group, Mesh, Object3D, Raycaster, Vector3, type SkinnedMesh } from 'three';
+import {
+  AnimationMixer,
+  BoxGeometry,
+  BufferGeometry,
+  DoubleSide,
+  Group,
+  Mesh,
+  MeshBasicMaterial,
+  Object3D,
+  Raycaster,
+  Vector3,
+  type MeshStandardMaterial,
+  type SkinnedMesh,
+} from 'three';
 import { loadGltf, matteMaterials, posedBox } from './models';
 import { onTick } from '../core/ticker';
 import { engine } from '../engine/globals';
@@ -134,8 +147,8 @@ function createSecret(scene: SceneModule['scene'], mesh: Object3D, piece: Secret
 // (the old UFO hovered, so the configured y is ignored when there is ground).
 
 export const PUPPY_URL = '/assets/models/dog/doggy_meme_dog_ps1.glb';
-/** Height (m) at scale 1; the admin "Kích thước" multiplies it. */
-export const PUPPY_HEIGHT = 0.6;
+/** Height (m) at scale 1; the admin "Kích thước" multiplies it. Was 0.6: tripled to make it a landmark in the woods. */
+export const PUPPY_HEIGHT = 1.8;
 /** Its idle animation only runs while the player is this close (m). */
 const PUPPY_ANIM_RANGE = 30;
 
@@ -289,6 +302,92 @@ export class UFO extends SceneModule {
       if (near) mixer.update(Math.min(delta, 100) / 1000);
       this._secret?.check();
     });
+  }
+}
+
+// --- The forest cat: a secret, like the puppy (config key "forestCat") ---
+//
+// Model: "Oiiaioooooiai Cat" by Zhuier, https://sketchfab.com/3d-models/oiiaioooooiai-cat-30d27bf7fb224849b76e208a6eccdb36
+// licensed CC-BY-4.0 (credited in the about panel, src/components/ui.ts, and README).
+// glTF loaded once the scene is up, standing on the terrain under its configured
+// x/z. It stays still: the model's spinning animation is never played. Unlit, like
+// the puppy: its texture is a dark tabby photo with the shading painted in, and
+// lit PBR made it a black blob in this scene's light.
+
+export const FOREST_CAT_URL = '/assets/models/cat/cat_uia.glb';
+/** Height (m) at scale 1; the admin "Kích thước" multiplies it. */
+export const FOREST_CAT_HEIGHT = 0.9;
+
+/** Solid box where the cat sits, so players bump into it. */
+export function catColliderBoxes(collider: BufferGeometry): BufferGeometry[] {
+  if (getConfig().features.modules.forestCat === false) return [];
+  const cfg = getConfig().secrets.forestCat;
+  const h = FOREST_CAT_HEIGHT * cfg.scale;
+  const ground = groundBelow(collider, cfg.position[0], cfg.position[2]) ?? cfg.position[1];
+  const box = new BoxGeometry(h * 0.9, h, h * 0.9);
+  box.translate(cfg.position[0], ground + h / 2, cfg.position[2]);
+  return [box];
+}
+
+export class ForestCat extends SceneModule {
+  /** Placed from the config (position on the ground, rotation, scale); the model sits inside. */
+  declare mesh: Group;
+  private _secret: Secret | null = null;
+
+  protected async init() {
+    this.mesh = new Group();
+    this.mesh.name = 'forest cat';
+    this.scene.add(this.mesh);
+    const place = () => {
+      const cfg = getConfig().secrets.forestCat;
+      const ground = terrainBelow(this.scene, cfg.position[0], cfg.position[2]);
+      this.mesh.position.set(cfg.position[0], ground ?? cfg.position[1], cfg.position[2]);
+      this.mesh.rotation.set(radians(cfg.rotation[0]), radians(cfg.rotation[1]), radians(cfg.rotation[2]));
+      this.mesh.scale.setScalar(cfg.scale);
+      if (this._secret) {
+        this._secret.text = cfg.text;
+        this._secret.distance = cfg.distance;
+      }
+    };
+    place();
+    watchConfig(place);
+    // Do not hold the scene for the model.
+    this.ready.resolve();
+    await this.scene.ready;
+    place(); // the terrain exists now
+    this._secret = createSecret(this.scene, this.mesh, 'forestCat');
+    onTick(() => this._secret?.check());
+    await engine.initialSceneLoaded;
+    try {
+      await this.loadModel();
+    } catch (err) {
+      console.warn('forest cat: model could not be loaded', err);
+    }
+  }
+
+  private async loadModel() {
+    const gltf = await loadGltf(FOREST_CAT_URL);
+    const model = gltf.scene;
+    model.updateMatrixWorld(true);
+    model.traverse((o) => {
+      const mesh = o as Mesh;
+      if (!mesh.isMesh) return;
+      const source = mesh.material as MeshStandardMaterial;
+      mesh.material = new MeshBasicMaterial({ map: source.map, side: DoubleSide });
+      source.dispose();
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+    });
+    // Fit: FOREST_CAT_HEIGHT tall, feet on y = 0, centred.
+    const box = posedBox(model);
+    const size = box.getSize(new Vector3());
+    const centre = box.getCenter(new Vector3());
+    const fit = new Group();
+    const s = size.y > 0 ? FOREST_CAT_HEIGHT / size.y : 1;
+    fit.scale.setScalar(s);
+    fit.position.set(-centre.x * s, -box.min.y * s, -centre.z * s);
+    fit.add(model);
+    this.mesh.add(fit);
   }
 }
 

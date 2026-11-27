@@ -46,6 +46,7 @@ export const EMOTES = [
   { id: 'dog2', label: 'Dắt chó beagle', key: 'M', state: 15, duration: 0 },
   { id: 'dog3', label: 'Dắt chó husky', key: '', state: 65, duration: 0 },
   { id: 'dog4', label: 'Dắt chó đốm', key: '', state: 66, duration: 0 },
+  { id: 'dog5', label: 'Dắt chó shiba', key: '', state: 67, duration: 0 },
   // Countryside (states 16+ need the 7-bit state field, see multiplayer/codec.ts).
   { id: 'stretch', label: 'Vươn vai', key: 'V', state: 16, duration: 5 },
   { id: 'skygaze', label: 'Ngắm trời', key: 'T', state: 17, duration: 0 },
@@ -82,7 +83,7 @@ export const EMOTE_GROUPS: ReadonlyArray<{ title: string; ids: readonly EmoteId[
   { title: '🎈 Vui chơi', ids: ['jumprope', 'shuttle', 'butterfly', 'kite', 'icecream', 'guitar', 'flute'] },
   { title: '🏡 Việc nhà & đồng áng', ids: ['water', 'pick', 'sweep', 'carry'] },
   { title: '📍 Tại chỗ đặc biệt', ids: ['fish', 'feed', 'benchSit', 'benchLie'] },
-  { title: '🐶 Thú cưng', ids: ['dog', 'dog2', 'dog3', 'dog4'] },
+  { title: '🐶 Thú cưng', ids: ['dog', 'dog2', 'dog3', 'dog4', 'dog5'] },
 ];
 export type EmoteId = (typeof EMOTES)[number]['id'];
 /** EMOTE_GROUPS with each emote's slot (1-based, as `webgl_character_emote` expects). */
@@ -99,7 +100,7 @@ export const TOGETHER_EMOTE_IDS: ReadonlySet<string> = new Set(['giftFlower', 't
 /** Key label of an emote in menus: its key, ♥ for play-together, · for menu-only ones. */
 export const emoteKeyHtml = (e: { id: string; key: string }) => (e.key ? `<kbd>${e.key}</kbd>` : TOGETHER_EMOTE_IDS.has(e.id) ? '<kbd class="together">♥</kbd>' : '<kbd>·</kbd>');
 /** Highest network animation state (server/realm.mjs MAX_ANIM_STATE mirrors it). */
-export const MAX_NET_STATE = 66;
+export const MAX_NET_STATE = 67;
 export const JUMPROPE_STATE = 30;
 export const SHUTTLE_STATE = 31;
 /** Holding out a flower / an ice cream to someone (waiting for an answer). */
@@ -166,8 +167,8 @@ export const ICECREAM_STATE = 12;
 export const HIGHFIVE_STATE = 13;
 /** Walking a pet (scene/pets.ts draws the dog and the leash). */
 export const DOG_STATE = 14;
-/** Walking one of the shop's dogs (states 14, 15, 65, 66; scene/pets.ts DOGS, same order). */
-export const DOG_STATES = [DOG_STATE, 15, 65, 66] as const;
+/** Walking one of the shop's dogs (states 14, 15, 65, 66, 67; scene/pets.ts DOGS, same order). */
+export const DOG_STATES = [DOG_STATE, 15, 65, 66, 67] as const;
 /** Slot (1-based, menu / keys) of the high-five. */
 export const HIGHFIVE_SLOT = EMOTES.findIndex((e) => e.id === 'highfive') + 1;
 
@@ -753,7 +754,7 @@ export function createEmoteClips(skinned: SkinnedMesh, idle: AnimationClip, run:
   };
   const walkDog = buildClip('emote-walk-dog', rest, 2.5, 20, leashFrame);
   // Own copies per dog state (one action per state in the mixer).
-  const [walkDog2, walkDog3, walkDog4] = [0, 1, 2].map(() => walkDog.clone());
+  const [walkDog2, walkDog3, walkDog4, walkDog5] = [0, 1, 2, 3].map(() => walkDog.clone());
 
   // While walking: upper body from the emote, legs from the run cycle
   // (kite: the free left arm swings too; ice cream: same).
@@ -1184,7 +1185,7 @@ export function createEmoteClips(skinned: SkinnedMesh, idle: AnimationClip, run:
   return {
     // States 39 … 42: the fishing mini-game stages, same clip (own copies: one
     // action per state in the mixer).
-    clips: [wave, clap, dance, sit, fish, prone, sunbathe, guitar, kite, iceCream, highFive, walkDog, walkDog2, ...countryClips, ...[0, 1, 2, 3].map(() => fish.clone()), net, ...holdFishClips, walkDog3, walkDog4],
+    clips: [wave, clap, dance, sit, fish, prone, sunbathe, guitar, kite, iceCream, highFive, walkDog, walkDog2, ...countryClips, ...[0, 1, 2, 3].map(() => fish.clone()), net, ...holdFishClips, walkDog3, walkDog4, walkDog5],
     moving: [...moving, ...countryMoving, ...fishMoving, { state: NET_STATE, clip: netWalk }, ...holdFishMoving],
     npc,
   };

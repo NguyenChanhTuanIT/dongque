@@ -433,6 +433,12 @@ firestore.rules      # Firestore security rules (config read-only for players)
   **"Doggy Meme Dog PS1"** by **rukitu**,
   https://sketchfab.com/3d-models/doggy-meme-dog-ps1-8f9361ab396e4c21a53bc50a57a740cd,
   licensed CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); credited
+  in the about panel too. Not modified, only scaled and placed. Also sold in
+  the shop as the shiba (`pet.dog5`, `DOGS[4]` in `src/scene/pets.ts`).
+- Cat hidden in the woods, a secret (`public/assets/models/cat/cat_uia.glb`):
+  **"Oiiaioooooiai Cat"** by **Zhuier** (https://sketchfab.com/Zhuier),
+  https://sketchfab.com/3d-models/oiiaioooooiai-cat-30d27bf7fb224849b76e208a6eccdb36,
+  licensed CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); credited
   in the about panel too. Not modified, only scaled and placed.
 - Shop dog (`public/assets/models/dog/dog_puppy.glb`):
   **"Dog Puppy"** by **kenchoo**,

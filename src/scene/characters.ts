@@ -15,7 +15,7 @@ import { BenchSeating, benchCollider, benchMeshes } from './benches';
 import { ChickenCoops, coopColliderBoxes } from './chickenCoops';
 import { FishingPier, cutShoreWall, pierColliderBoxes } from './fishingPier';
 import { cutRemovedMachines } from './structures';
-import { cutUfoCollider, puppyColliderBoxes } from './setpieces';
+import { catColliderBoxes, cutUfoCollider, puppyColliderBoxes } from './setpieces';
 import { FishingGame } from './fishingGame';
 import { FishingGear } from './fishing';
 import { Butterflies } from './butterflies';
@@ -107,8 +107,11 @@ export class CharactersModule extends SceneModule {
     // Chicken coops (hen house + fence) and the fishing pier deck too.
     // The pier crosses the map's invisible shore wall: cut a gap there first.
     // The old UFO hull is cut out; the puppy that replaced it gets a small box.
+    // The forest cat (another secret) gets a box too.
     const walkGround = cutUfoCollider(cutRemovedMachines(cutShoreWall(colliderGeometry)));
-    const colliderMesh = new Mesh(benchCollider(walkGround, [...coopColliderBoxes(), ...pierColliderBoxes(), ...puppyColliderBoxes(walkGround)]));
+    const colliderMesh = new Mesh(
+      benchCollider(walkGround, [...coopColliderBoxes(), ...pierColliderBoxes(), ...puppyColliderBoxes(walkGround), ...catColliderBoxes(walkGround)]),
+    );
     const config = getConfig();
 
     this.mesh = new Characters(skinned, clips, {

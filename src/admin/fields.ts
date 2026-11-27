@@ -55,6 +55,7 @@ const MODULE_LABELS: Record<(typeof TOGGLEABLE_MODULES)[number], string> = {
   cats: 'Mèo',
   sloth: 'Con lười',
   gossip: 'Gossip (máy chơi game)',
+  forestCat: 'Mèo trong rừng (bí mật)',
 };
 
 const PIECE_LABELS: Record<(typeof SECRET_PIECES)[number], string> = {
@@ -63,6 +64,7 @@ const PIECE_LABELS: Record<(typeof SECRET_PIECES)[number], string> = {
   cats: 'Mèo',
   sloth: 'Con lười',
   gossip: 'Gossip',
+  forestCat: 'Mèo trong rừng',
 };
 
 export const SECTIONS: Section[] = [

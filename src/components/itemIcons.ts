@@ -155,6 +155,19 @@ const ITEM_ICONS: Record<string, string> = {
       path('M21 29 C21 27 27 27 27 29 C27 31 25 32 24 32 C23 32 21 31 21 29 Z', INK) +
       `<path d="M24 32 V35 M21 36 Q24 38 27 36" fill="none" ${LINE}/>`,
   ),
+  // Shiba: fox-red head, upright pointed ears, cream cheeks and muzzle, eyebrow dots.
+  'pet.dog5': svg(
+    path('M12 22 L13 7 L22 14 Z', '#d9823b') +
+      path('M36 22 L35 7 L26 14 Z', '#d9823b') +
+      path('M15 18 L15.5 11 L19.5 14.5 Z', '#f4ead8', 'stroke-width="0"') +
+      path('M33 18 L32.5 11 L28.5 14.5 Z', '#f4ead8', 'stroke-width="0"') +
+      path('M24 12 C33 12 38 18 38 26 C38 35 32 41 24 41 C16 41 10 35 10 26 C10 18 15 12 24 12 Z', '#d9823b') +
+      path('M24 25 C30 25 35 29 35 34 C35 38 30 41 24 41 C18 41 13 38 13 34 C13 29 18 25 24 25 Z', '#f4ead8') +
+      circle(18.5, 23, 1.8, INK, '') + circle(29.5, 23, 1.8, INK, '') +
+      circle(18.5, 19.5, 1.1, '#f4ead8', '') + circle(29.5, 19.5, 1.1, '#f4ead8', '') +
+      path('M21.5 28.5 C21.5 27 26.5 27 26.5 28.5 C26.5 30 25 31 24 31 C23 31 21.5 30 21.5 28.5 Z', INK) +
+      `<path d="M24 31 V33 M20.5 33.5 Q24 36.5 27.5 33.5" fill="none" ${LINE}/>`,
+  ),
   'hobby.flute': svg(
     `<g transform="rotate(-35 24 24)">` +
       `<rect x="4" y="20.5" width="40" height="7" rx="3.5" fill="#d9b26a" ${LINE}/>` +

@@ -10,12 +10,12 @@ export type Vec3 = [number, number, number];
 export const TOGGLEABLE_MODULES = [
   'birds', 'trees', 'bushes', 'lightposts', 'palmtrees', 'houses', 'warehouses',
   'machines', 'rocks1', 'rocks2', 'parasols', 'castles', 'grass', 'blockers',
-  'ufo', 'alien', 'sign', 'cats', 'sloth', 'gossip',
+  'ufo', 'alien', 'sign', 'cats', 'sloth', 'gossip', 'forestCat',
 ] as const;
 export type ToggleableModule = (typeof TOGGLEABLE_MODULES)[number];
 
 /** Set pieces that carry a hidden secret (easter egg). */
-export const SECRET_PIECES = ['ufo', 'alien', 'cats', 'sloth', 'gossip'] as const;
+export const SECRET_PIECES = ['ufo', 'alien', 'cats', 'sloth', 'gossip', 'forestCat'] as const;
 export type SecretPiece = (typeof SECRET_PIECES)[number];
 
 export interface SecretPieceConfig {
@@ -149,6 +149,15 @@ export const DEFAULT_CONFIG: SceneConfig = {
       distance: 3,
       position: [-56.9402, 2.6553, 22.7015],
       rotation: [0, 0, 0],
+      scale: 1,
+    },
+    // The "Oiiai" cat hidden deep in the grove west of the spawn, behind the big
+    // rock past the stone benches (setpieces.ts ForestCat).
+    forestCat: {
+      text: 'Một chú mèo mướp ngồi im lặng giữa rừng cây. Nó nhìn bạn như thể đã đợi ở đây rất lâu rồi.',
+      distance: 3,
+      position: [-60.5, 1.93, -64],
+      rotation: [0, 120, 0],
       scale: 1,
     },
     alien: {

@@ -41,13 +41,14 @@ interface DogModel {
 
 /**
  * The shop's dogs, in DOG_STATES order (catalog pet.dog, pet.dog2, pet.dog3,
- * pet.dog4). Credits and licences: README "Credits".
+ * pet.dog4, pet.dog5). Credits and licences: README "Credits".
  */
 export const DOGS: DogModel[] = [
   { url: '/assets/models/dog/dog_puppy.glb', height: 0.5, yaw: 0 },
   { url: '/assets/models/dog/low_poly_dog.glb', height: 0.5, yaw: 0 },
   { url: '/assets/models/dog/dog.glb', height: 0.55, yaw: 0 },
   { url: '/assets/models/dog/dog_with_bomb.glb', height: 0.5, yaw: Math.PI }, // modelled facing -z
+  { url: '/assets/models/dog/doggy_meme_dog_ps1.glb', height: 0.5, yaw: 0 }, // shiba (also the big one in the woods, setpieces.ts)
 ];
 
 function hiddenInstances(geometry: BufferGeometry, material: InstancedMesh['material'], name: string) {

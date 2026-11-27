@@ -76,7 +76,8 @@ const ORIGINAL_CREDIT =
   '<a href="https://sketchfab.com/3d-models/dog-puppy-72331763040e4314b154f84348fe0957" rel="noreferrer" target="_blank" class="link2">“Dog Puppy”</a> của <a href="https://sketchfab.com/kenchoo" rel="noreferrer" target="_blank" class="link2">kenchoo</a>, ' +
   '<a href="https://sketchfab.com/yarelon111" rel="noreferrer" target="_blank" class="link2">“Dog”</a> của Yarelon, ' +
   '<a href="https://sketchfab.com/jessica_magno" rel="noreferrer" target="_blank" class="link2">“Low Poly Dog”</a> của Jéssica Magno (đã đổi định dạng vật liệu), giấy phép <a href="https://creativecommons.org/licenses/by/4.0/" rel="noreferrer" target="_blank" class="link2">CC BY 4.0</a>; ' +
-  '<a href="https://sketchfab.com/hamsterspit" rel="noreferrer" target="_blank" class="link2">“Dog With Bomb”</a> của hamsterspit, giấy phép <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/" rel="noreferrer" target="_blank" class="link2">CC BY-NC-ND 4.0</a> (phi thương mại).';
+  '<a href="https://sketchfab.com/hamsterspit" rel="noreferrer" target="_blank" class="link2">“Dog With Bomb”</a> của hamsterspit, giấy phép <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/" rel="noreferrer" target="_blank" class="link2">CC BY-NC-ND 4.0</a> (phi thương mại).' +
+  '<br>Mô hình chú mèo: <a href="https://sketchfab.com/3d-models/oiiaioooooiai-cat-30d27bf7fb224849b76e208a6eccdb36" rel="noreferrer" target="_blank" class="link2">“Oiiaioooooiai Cat”</a> của <a href="https://sketchfab.com/Zhuier" rel="noreferrer" target="_blank" class="link2">Zhuier</a>, giấy phép <a href="https://creativecommons.org/licenses/by/4.0/" rel="noreferrer" target="_blank" class="link2">CC BY 4.0</a>.';
 
 type InfoName = 'about' | 'congrats';
 interface InfoContent {

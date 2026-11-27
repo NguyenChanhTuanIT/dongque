@@ -15,7 +15,7 @@ import { Sea } from './sea';
 import { Birds } from './birds';
 import { Trees, Bushes, Palmtrees, Rocks1, Rocks2, Grass } from './vegetation';
 import { Houses, Warehouses, Machines, Lightposts, Parasols, Castles, Blockers } from './structures';
-import { UFO, Alien, Cats, Sloth, Sign, Gossip } from './setpieces';
+import { UFO, Alien, Cats, Sloth, Sign, Gossip, ForestCat } from './setpieces';
 import { CharactersModule } from './characters';
 import type { MainController } from './mainController';
 import { getConfig, watchConfig } from '../config/store';
@@ -49,6 +49,7 @@ export class EnvironmentScene extends BaseScene {
   declare cats: Cats;
   declare sloth: Sloth;
   declare gossip: Gossip;
+  declare forestCat: ForestCat;
   declare characters: CharactersModule;
 
   constructor(_mainController: MainController) {
@@ -86,6 +87,7 @@ export class EnvironmentScene extends BaseScene {
         ['cats', Cats],
         ['sloth', Sloth],
         ['gossip', Gossip],
+        ['forestCat', ForestCat],
       ];
     // Modules switched off in the remote config are never constructed.
     const enabled = getConfig().features.modules as Record<string, boolean>;

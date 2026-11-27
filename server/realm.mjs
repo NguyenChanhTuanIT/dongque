@@ -201,9 +201,9 @@ const MAX_ABS_COORD = 10_000;
  *  11 kite, 12 ice cream, 13 high five, 14 / 15 walking the shop's 1st / 2nd dog,
  *  16 … 38 countryside emotes, stone benches, play together, 39 … 42 fishing
  *  mini-game stages, 43 catching butterflies, 44 … 64 holding up a caught fish
- *  (one per species), 65 … 66 walking the shop's 3rd / 4th dog (src/scene/emotes.ts
+ *  (one per species), 65 … 67 walking the shop's 3rd / 4th / 5th dog (src/scene/emotes.ts
  *  MAX_NET_STATE). The field has 7 bits (bit 7 = sprinting). */
-const MAX_ANIM_STATE = 66;
+const MAX_ANIM_STATE = 67;
 /** Fishing mini-game stages (bite, fight, landed, snapped) and holding up a catch (44 … 64): they need the fishing rod like state 7. */
 const FISH_STATE = 7;
 /** Items that can break and be lost (then bought again): the fishing rod. */
