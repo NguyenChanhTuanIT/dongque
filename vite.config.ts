@@ -1,5 +1,7 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createRealm } from './server/realm.mjs';
 import { createAdminApi } from './server/admin-api.mjs';
@@ -54,9 +56,39 @@ function multiplayerRelay(firebaseProjectId: string): Plugin {
   };
 }
 
+/**
+ * Writes `<name>.png.bin` next to every PNG/JPEG in dist/assets/images. Render's
+ * CDN (Cloudflare Polish) re-encodes image/* responses (lossy WebP, re-compressed
+ * PNG), which breaks data textures such as masks.png (road/sand/path vanish).
+ * The .bin copies are served as octet-stream and left byte-exact; the texture
+ * loader (src/engine/loaders/textures.ts) reads them first.
+ */
+function rawImageCopies(): Plugin {
+  let outDir = 'dist';
+  return {
+    name: 'dongque-raw-image-copies',
+    apply: 'build',
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    closeBundle() {
+      const dir = path.join(outDir, 'assets', 'images');
+      if (!fs.existsSync(dir)) return;
+      const walk = (d: string) => {
+        for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+          const file = path.join(d, entry.name);
+          if (entry.isDirectory()) walk(file);
+          else if (/\.(png|jpe?g)$/i.test(entry.name)) fs.copyFileSync(file, file + '.bin');
+        }
+      };
+      walk(dir);
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
   // Same project as the client: the relay verifies Google sign-in tokens for name changes.
-  plugins: [multiplayerRelay(loadEnv(mode, process.cwd(), 'VITE_').VITE_FIREBASE_PROJECT_ID ?? '')],
+  plugins: [multiplayerRelay(loadEnv(mode, process.cwd(), 'VITE_').VITE_FIREBASE_PROJECT_ID ?? ''), rawImageCopies()],
   publicDir: 'public',
   build: {
     target: 'es2022',

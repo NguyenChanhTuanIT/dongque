@@ -36,6 +36,48 @@ const imageLoader = new ThreeTextureLoader();
 const exrLoader = new EXRLoader();
 const cache = new Map<string, LoadedTexture>();
 
+const IMAGE_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
+
+/** True when the bytes really are a PNG/JPEG (not e.g. an SPA index.html fallback). */
+function isImageBytes(bytes: Uint8Array): boolean {
+  const png = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+  const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  return png || jpeg;
+}
+
+/**
+ * Load a PNG/JPEG texture byte-exact. Render's CDN (Cloudflare Polish)
+ * re-encodes images served as image/* for browsers: lossy WebP (or a
+ * re-compressed PNG), which destroys data textures. masks.png keeps
+ * road/sand/path in RGB with alpha mostly 0, and the re-encode zeroes RGB under
+ * transparent pixels, so the road and sand vanish. The build (vite.config.ts,
+ * rawImageCopies) writes a `<name>.png.bin` copy of every image, served as
+ * octet-stream, which the CDN leaves alone; it is decoded here through a blob:
+ * URL so the <img> decode path (flipY etc.) is unchanged. Falls back to the
+ * plain image URL when the copy is missing (dev server, other hosts).
+ */
+async function loadImageUntransformed(url: string): Promise<Texture> {
+  const ext = url.split('?')[0].split('.').pop()?.toLowerCase() ?? '';
+  const mime = IMAGE_MIME[ext];
+  if (!mime || !import.meta.env.PROD) return imageLoader.loadAsync(url);
+
+  let objectUrl: string;
+  try {
+    const response = await fetch(url + '.bin');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!isImageBytes(bytes)) throw new Error('not an image');
+    objectUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  } catch {
+    return imageLoader.loadAsync(url);
+  }
+  try {
+    return await imageLoader.loadAsync(objectUrl);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 /** Must be called once with the renderer to enable compressed textures. */
 export function initTextureLoader(renderer: WebGLRenderer): void {
   ktx2Loader.detectSupport(renderer);
@@ -76,7 +118,7 @@ export const textureLoader = {
       try {
         if (ext.startsWith('ktx2')) loaded = await ktx2Loader.loadAsync(fullUrl);
         else if (ext.startsWith('exr')) loaded = await exrLoader.loadAsync(fullUrl);
-        else if (ext.startsWith('mp4') || ext.startsWith('webm')) { const video = document.createElement('video'); video.src = fullUrl; video.muted = true; video.loop = true; video.playsInline = true; await new Promise<void>((resolve, reject) => { video.addEventListener('loadeddata', () => resolve(), { once: true }); video.addEventListener('error', () => reject(new Error('video load failed')), { once: true }); video.load(); }); loaded = new VideoTexture(video); } else loaded = await imageLoader.loadAsync(fullUrl);
+        else if (ext.startsWith('mp4') || ext.startsWith('webm')) { const video = document.createElement('video'); video.src = fullUrl; video.muted = true; video.loop = true; video.playsInline = true; await new Promise<void>((resolve, reject) => { video.addEventListener('loadeddata', () => resolve(), { once: true }); video.addEventListener('error', () => reject(new Error('video load failed')), { once: true }); video.load(); }); loaded = new VideoTexture(video); } else loaded = await loadImageUntransformed(fullUrl);
       } catch (err) {
         console.warn('Texture load:', err);
         // fallback to the uv-checker texture (original behavior)
