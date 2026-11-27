@@ -1,7 +1,7 @@
 import { events } from '../core/events';
 import { DEFAULT_CONFIG, type SceneConfig } from '../config/schema';
 import { isConfigFromServer } from '../config/store';
-import { EMOTES, emoteKeyHtml } from '../scene/emotes';
+import { emoteGroups, emoteKeyHtml } from '../scene/emotes';
 import { DEFAULT_OUTFIT, PRESETS, SLOTS, sanitizeOutfit, type Outfit } from '../scene/appearance';
 import { chosenName, displayName } from '../social/presence';
 import { currentUser, isLoginAvailable, savedName, setName, signOut, watchUser } from '../social/auth';
@@ -47,8 +47,6 @@ const COLOR_PALETTE: Array<{ label: string; hue: number }> = [
 /** CSS colour of the lit band of a player colour (HSV h, 0.4, 0.8 as HSL). */
 const swatchColor = (hue: number) => `hsl(${Math.round(hue * 360)}, 44%, 64%)`;
 
-/** Emote menu entries: item n = key n (see scene/characters.ts emoteSlots). */
-const EMOTE_MENU = EMOTES.map((e) => e.label);
 /** The loader title of the last visit (the admin config's), shown before this visit's config is in. */
 const LOADER_TITLE_KEY = 'dq-loader-title';
 
@@ -121,7 +119,9 @@ export class UiController {
 
     this.loader = document.createElement('div');
     this.loader.id = 'loader';
-    this.loader.innerHTML = '<h1></h1><div class="spinner"><svg viewBox="0 0 66 66" aria-hidden="true"><circle class="path" fill="none" stroke-width="7" stroke-linecap="round" cx="33" cy="33" r="29"/></svg></div>';
+    this.loader.setAttribute('role', 'status');
+    this.loader.setAttribute('aria-label', 'Đang tải');
+    this.loader.innerHTML = '<h1></h1><div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>';
     // No built-in title (it flashed before the admin's one arrived): the title
     // from the last visit if any, else nothing until the config is in (applyConfig).
     const loaderTitle = this.loader.querySelector('h1') as HTMLElement;
@@ -172,10 +172,18 @@ export class UiController {
     // ---- 🙂 emote menu ----
     const emoteButton = navButton('emote (E)');
     const emoteMenu = this.navMenu(emoteButton, 'Biểu cảm');
-    EMOTE_MENU.forEach((label, i) => {
-      const item = menuItem(emoteMenu.menu, emoteKeyHtml(EMOTES[i]), label);
-      item.addEventListener('click', () => events.emit('webgl_character_emote', i + 1));
-    });
+    // Grouped (scene/emotes.ts EMOTE_GROUPS); each item plays its own slot.
+    for (const group of emoteGroups()) {
+      const head = document.createElement('div');
+      head.className = 'menu-group';
+      head.setAttribute('role', 'presentation');
+      head.textContent = group.title;
+      emoteMenu.menu.append(head);
+      for (const e of group.emotes) {
+        const item = menuItem(emoteMenu.menu, emoteKeyHtml(e), e.label);
+        item.addEventListener('click', () => events.emit('webgl_character_emote', e.slot));
+      }
+    }
     // Picnic emotes (fishing, guitar, kite, ice cream) need their item: the menu
     // does not lock them; choosing one without the item shows a notice instead.
     this.setupNotices(root);
@@ -685,7 +693,12 @@ export class UiController {
   }
 
   showExperience() {
-    this.loader.remove();
+    // Fade the loader out over the scene instead of cutting to it.
+    const loader = this.loader;
+    loader.classList.add('hidden');
+    const done = () => loader.remove();
+    loader.addEventListener('transitionend', done, { once: true });
+    setTimeout(done, 1200); // no transition (reduced motion, hidden tab)
     this.nav.classList.add('visible');
     this.chat.root.classList.add('visible');
     this.online.root.classList.add('visible');

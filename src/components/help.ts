@@ -4,7 +4,7 @@
 // Four tabs in the same modal card as the other nav panels (overlay.ts).
 
 import { events } from '../core/events';
-import { EMOTES, emoteKeyHtml } from '../scene/emotes';
+import { emoteGroups, emoteKeyHtml } from '../scene/emotes';
 import { itemForEmote } from '../shop/catalog';
 import { addPanelBar } from './panelBar';
 import { mountPanelModal } from './overlay';
@@ -42,10 +42,10 @@ const NAV_GUIDE: Array<[string, string]> = [
 ];
 
 function basicsHtml(): string {
-  const rows = CONTROLS.map(([action, keys, touch]) => `<li><b>${action}</b><span>⌨️ ${keys}</span><span>📱 ${touch}</span></li>`).join('');
+  const rows = CONTROLS.map(([action, keys, touch]) => `<li><b>${action}</b><span class="only-keys">⌨️ ${keys}</span><span class="only-touch">📱 ${touch}</span></li>`).join('');
   const nav = NAV_GUIDE.map(([name, text]) => `<li><b>${name}</b><span>${text}</span></li>`).join('');
   return `<ul class="help-rows">${rows}</ul>
-    <p class="rewards-note">Tay cầm: cần trái để đi, A / ✕ nhảy, RB / R1 chạy nhanh, Y / △ vẫy tay.</p>
+    <p class="rewards-note only-keys">Tay cầm: cần trái để đi, A / ✕ nhảy, RB / R1 chạy nhanh, Y / △ vẫy tay.</p>
     <div class="look-group"><span>Các nút góc phải</span></div>
     <ul class="help-rows help-nav">${nav}</ul>
     <div class="look-group"><span>Khung chat góc dưới trái</span></div>
@@ -53,14 +53,20 @@ function basicsHtml(): string {
 }
 
 function emotesHtml(): string {
-  const items = EMOTES.map((e) => {
-    const item = itemForEmote(e.state);
-    const key = emoteKeyHtml(e);
-    const need = item ? `<small>cần ${item.label}</small>` : '';
-    return `<li>${key}<span>${e.label}</span>${need}</li>`;
-  }).join('');
-  return `<p class="rewards-note">Bấm phím hoặc chọn từ nút mặt cười.</p>
-    <ul class="help-emotes">${items}</ul>
+  const groups = emoteGroups()
+    .map((g) => {
+      const items = g.emotes
+        .map((e) => {
+          const item = itemForEmote(e.state);
+          const need = item ? `<small>cần ${item.label}</small>` : '';
+          return `<li>${emoteKeyHtml(e)}<span>${e.label}</span>${need}</li>`;
+        })
+        .join('');
+      return `<div class="look-group"><span>${g.title}</span></div><ul class="help-emotes">${items}</ul>`;
+    })
+    .join('');
+  return `<p class="rewards-note"><span class="only-keys">Bấm phím hoặc chọn từ nút mặt cười.</span><span class="only-touch">Chạm nút mặt cười 🙂 ở góc phải rồi chọn động tác.</span></p>
+    ${groups}
     <p class="rewards-note"><kbd class="together">♥</kbd> Động tác đôi (tặng hoa, nắm tay, nhảy đôi…): đứng gần một người chơi khác rồi chọn trong menu, người kia cần đồng ý. Động tác "cần …" phải mua món đó trong Cửa hàng trước.</p>`;
 }
 
@@ -74,12 +80,15 @@ function flowersHtml(): string {
     <div class="look-group"><button type="button" class="primary" data-shop>Mở Cửa hàng</button></div>`;
 }
 
+/** Keyboard wording on computers, touch wording on phones (CSS .only-keys / .only-touch). */
+const either = (keys: string, touch: string) => `<span class="only-keys">${keys}</span><span class="only-touch">${touch}</span>`;
+
 function exploreHtml(): string {
   return `<ul class="help-rows help-nav">
-      <li><b>🎣 Câu cá</b><span>Cầu câu ở bờ biển phía đông. Ra đoạn cầu ngoài biển, bấm ${kbd('6')} (hoặc nút trong khung chat) để thả câu. Phao chìm thì bấm ${kbd('Space')} để giật, giữ để kéo, thả ra khi cần cong nhiều kẻo đứt dây.</span></li>
-      <li><b>🐔 Cho gà ăn</b><span>Chuồng gà trên bãi cỏ phía tây. Đứng cạnh hàng rào, bấm ${kbd('G')} để vãi thóc (cần Lúa).</span></li>
-      <li><b>🪑 Ghế đá</b><span>Trong lùm cây phía tây. Đứng cạnh ghế, bấm ${kbd('F')} để ngồi hoặc ${kbd('L')} để nằm (nút hiện trong khung chat).</span></li>
-      <li><b>🙌 Đập tay</b><span>Bấm ${kbd('H')} gần một người chơi khác; khi hai bàn tay chạm nhau sẽ có pháo tay 👏.</span></li>
+      <li><b>🎣 Câu cá</b><span>Cầu câu ở bờ biển phía đông. Ra đoạn cầu ngoài biển, ${either(`bấm ${kbd('6')} (hoặc nút trong khung chat)`, 'chạm nút Câu cá trong khung chat')} để thả câu. Phao chìm thì ${either(`bấm ${kbd('Space')}`, 'chạm nút 🎣')} để giật, giữ để kéo, thả ra khi cần cong nhiều kẻo đứt dây.</span></li>
+      <li><b>🐔 Cho gà ăn</b><span>Chuồng gà trên bãi cỏ phía tây. Đứng cạnh hàng rào, ${either(`bấm ${kbd('G')}`, 'chạm nút Cho gà ăn trong khung chat')} để vãi thóc (cần Lúa).</span></li>
+      <li><b>🪑 Ghế đá</b><span>Trong lùm cây phía tây. Đứng cạnh ghế, ${either(`bấm ${kbd('F')} để ngồi hoặc ${kbd('L')} để nằm (nút hiện trong khung chat)`, 'chạm nút Ngồi hoặc Nằm trong khung chat')}.</span></li>
+      <li><b>🙌 Đập tay</b><span>${either(`Bấm ${kbd('H')}`, 'Chọn Đập tay trong nút mặt cười')} gần một người chơi khác; khi hai bàn tay chạm nhau sẽ có pháo tay 👏.</span></li>
       <li><b>✨ Bí mật</b><span>Làng có vài điều bí mật được giấu kỹ. Cứ đi dạo, ghé những góc lạ để tìm nhé.</span></li>
     </ul>`;
 }

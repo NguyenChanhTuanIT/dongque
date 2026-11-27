@@ -70,6 +70,30 @@ export const EMOTES = [
   { id: 'holdHands', label: 'Nắm tay đi dạo', key: '', state: 36, duration: 0 },
   { id: 'pairDance', label: 'Nhảy đôi', key: '', state: 38, duration: 0 },
 ] as const;
+/**
+ * How the emote menu and the help list are grouped and ordered. Display only:
+ * slots (keys, E / gamepad = slot 1, network) keep the EMOTES order above.
+ * Every EMOTES id must appear exactly once.
+ */
+export const EMOTE_GROUPS: ReadonlyArray<{ title: string; ids: readonly EmoteId[] }> = [
+  { title: '👋 Giao lưu', ids: ['wave', 'clap', 'highfive', 'whistle', 'dance'] },
+  { title: '💞 Cùng nhau', ids: ['giftFlower', 'treatIceCream', 'holdHands', 'pairDance'] },
+  { title: '🌿 Thư giãn', ids: ['stretch', 'sit', 'bored', 'skygaze', 'clouds', 'prone', 'sunbathe', 'read', 'fan'] },
+  { title: '🎈 Vui chơi', ids: ['jumprope', 'shuttle', 'butterfly', 'kite', 'icecream', 'guitar', 'flute'] },
+  { title: '🏡 Việc nhà & đồng áng', ids: ['water', 'pick', 'sweep', 'carry'] },
+  { title: '📍 Tại chỗ đặc biệt', ids: ['fish', 'feed', 'benchSit', 'benchLie'] },
+  { title: '🐶 Thú cưng', ids: ['dog', 'dog2', 'dog3', 'dog4'] },
+];
+export type EmoteId = (typeof EMOTES)[number]['id'];
+/** EMOTE_GROUPS with each emote's slot (1-based, as `webgl_character_emote` expects). */
+export const emoteGroups = () =>
+  EMOTE_GROUPS.map((g) => ({
+    title: g.title,
+    emotes: g.ids.map((id) => {
+      const i = EMOTES.findIndex((e) => e.id === id);
+      return { ...EMOTES[i], slot: i + 1 };
+    }),
+  }));
 /** Play-together emotes (aimed at the nearest player, scene/together.ts): shown with ♥ instead of a key. */
 export const TOGETHER_EMOTE_IDS: ReadonlySet<string> = new Set(['giftFlower', 'treatIceCream', 'holdHands', 'pairDance']);
 /** Key label of an emote in menus: its key, ♥ for play-together, · for menu-only ones. */

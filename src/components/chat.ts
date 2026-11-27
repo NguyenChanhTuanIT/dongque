@@ -149,10 +149,10 @@ export class ChatPanel {
       li.append(who, ': ');
     }
     if (kind === 'tip') {
+      // Shown like the other notices (italic line): "🐔 Chuồng gà: how-to…".
       const [title, ...rest] = text.split('\n');
-      const head = document.createElement('b');
-      head.textContent = title;
-      li.append(head, rest.join('\n')); // the title is a block: no break after it
+      li.className = 'system';
+      li.append(rest.length ? `${title}: ${rest.join(' ')}` : title);
     } else {
       li.append(text);
     }
