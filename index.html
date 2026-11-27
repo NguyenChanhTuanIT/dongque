@@ -8,6 +8,54 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <meta name="description" content="Một góc quê để thư giãn: sống chậm, gặp gỡ, câu cá, cho gà ăn. Lấy cảm hứng từ Relax Afternoon của Vicente Lucendo." />
     <meta name="theme-color" content="#fffdf8" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://dongque.onrender.com/" />
+
+    <!-- Link previews (Facebook, Messenger, Zalo, Telegram, Discord, Slack, LinkedIn…). URLs must be absolute. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Đồng quê" />
+    <meta property="og:locale" content="vi_VN" />
+    <meta property="og:url" content="https://dongque.onrender.com/" />
+    <meta property="og:title" content="Một góc quê để thư giãn" />
+    <meta property="og:description" content="Sống chậm giữa làng quê: dạo biển, câu cá, cho gà ăn và gặp gỡ mọi người. Chơi ngay trên trình duyệt, không cần cài đặt." />
+    <meta property="og:image" content="https://dongque.onrender.com/og-image.jpg" />
+    <meta property="og:image:secure_url" content="https://dongque.onrender.com/og-image.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Cậu bé đứng trên bãi cát nhìn ra biển, có người câu cá trên cầu gỗ và một cặp đôi ngồi bên bờ" />
+    <!-- X / Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Một góc quê để thư giãn" />
+    <meta name="twitter:description" content="Sống chậm giữa làng quê: dạo biển, câu cá, cho gà ăn và gặp gỡ mọi người. Chơi ngay trên trình duyệt." />
+    <meta name="twitter:image" content="https://dongque.onrender.com/og-image.jpg" />
+    <meta name="twitter:image:alt" content="Cậu bé đứng trên bãi cát nhìn ra biển" />
+
+    <!-- Structured data for search engines. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "VideoGame",
+        "name": "Một góc quê để thư giãn",
+        "alternateName": "Đồng quê",
+        "url": "https://dongque.onrender.com/",
+        "image": "https://dongque.onrender.com/og-image.jpg",
+        "description": "Trò chơi thư giãn trên trình duyệt: sống chậm giữa làng quê, dạo biển, câu cá, cho gà ăn và gặp gỡ mọi người.",
+        "inLanguage": "vi",
+        "genre": ["Casual", "Simulation"],
+        "gamePlatform": "Web browser",
+        "applicationCategory": "Game",
+        "playMode": "MultiPlayer",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "VND" }
+      }
+    </script>
+    <!-- Home-screen install: open without browser UI (Android via manifest, iOS via apple-* metas). -->
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Đồng quê" />
     <!-- UI fonts (Google Fonts): Mali for text (has Vietnamese), Playwrite AU SA
          Guides for titles; Stylish (public/assets/fonts) stays as the fallback. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -17,6 +65,12 @@
   </head>
   <body>
     <div id="app"></div>
+    <!-- Readable text for crawlers and no-JS visitors (the game itself is a WebGL canvas). -->
+    <noscript>
+      <h1>Một góc quê để thư giãn</h1>
+      <p>Sống chậm giữa làng quê: dạo biển, câu cá, cho gà ăn và gặp gỡ mọi người. Trò chơi chạy trên trình duyệt, cần bật JavaScript và WebGL.</p>
+      <img src="/og-image.jpg" width="1200" height="630" alt="Cậu bé đứng trên bãi cát nhìn ra biển" style="max-width:100%;height:auto" />
+    </noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

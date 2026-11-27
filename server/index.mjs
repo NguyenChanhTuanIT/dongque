@@ -78,6 +78,9 @@ const MIME = {
   '.ktx2': 'image/ktx2',
   '.bin': 'application/octet-stream',
   '.txt': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
+  '.webmanifest': 'application/manifest+json',
+  '.ico': 'image/x-icon',
 };
 
 /**
