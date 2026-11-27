@@ -8,16 +8,20 @@
 //   PORT                  (8787)
 //   HOST                  (unset = all interfaces, IPv4 + IPv6)
 //   STATIC_DIR            (../dist relative to this file; "" disables static serving)
-//   MAX_PLAYERS_PER_ROOM  (127)
+//   MAX_PLAYERS_PER_ROOM  (1000) everyone plays in one room
+//   VISIBLE_MAX           (100) players each client is sent; past that, the nearest ones (+ nearby chat)
 //   TICK_MS               (50)
 //   VIEW_DISTANCE         (0 = relay everyone)
 //   ALLOWED_ORIGINS       (comma-separated; default RENDER_EXTERNAL_URL on Render, else any)
 //   MAX_CONNECTIONS       (1000) all WebSocket connections together
 //   MAX_PER_IP            (12) WebSocket connections from one IP (X-Forwarded-For behind a proxy)
 //   MAX_ROOMS             (20) rooms open at once
-//   DATA_DIR              (server/data) where wallets.json (flowers, daily rewards) and feedback.json are kept
+//   DATA_DIR              (server/data) where wallets.json + wallets.journal (flowers, daily rewards) and feedback.json are kept
 //   REWARDS_TZ            (Asia/Ho_Chi_Minh) calendar of the daily rewards
 //   FIREBASE_PROJECT_ID   (falls back to VITE_FIREBASE_PROJECT_ID; unset = name changes disabled)
+//   CLIENT_IP_HEADER      header the edge proxy overwrites with the client IP (see server/client-ip.mjs)
+//   TRUST_PROXY           proxies appending to X-Forwarded-For (client IP read from the right)
+//   MAX_EARNING_PER_IP    (4) wallets earning online time at once from one IP (0 = no limit)
 
 import http from 'node:http';
 import zlib from 'node:zlib';
@@ -27,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { createRealm } from './realm.mjs';
 import { createAdminApi } from './admin-api.mjs';
 import { createFeedback } from './feedback.mjs';
+import { createClientIp, parseTrustProxy } from './client-ip.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const env = process.env;
@@ -36,10 +41,15 @@ const STATIC_DIR = env.STATIC_DIR === '' ? null : path.resolve(here, env.STATIC_
 
 const FIREBASE_PROJECT_ID = env.FIREBASE_PROJECT_ID || env.VITE_FIREBASE_PROJECT_ID || '';
 const DATA_DIR = env.DATA_DIR ? path.resolve(env.DATA_DIR) : path.join(here, 'data');
+const clientIp = createClientIp({ header: env.CLIENT_IP_HEADER || '', trustProxy: parseTrustProxy(env.TRUST_PROXY), debug: env.LOG_CLIENT_IP === '1' });
 const realm = createRealm({
+  clientIp,
+  maxEarningPerIp: Number(env.MAX_EARNING_PER_IP ?? 4),
   dataDir: DATA_DIR,
   timeZone: env.REWARDS_TZ || undefined,
-  maxPlayersPerRoom: Number(env.MAX_PLAYERS_PER_ROOM ?? 127),
+  maxPlayersPerRoom: Number(env.MAX_PLAYERS_PER_ROOM ?? 1000),
+  // The game draws 128 characters (NPCs and the local player included).
+  visibleMax: Math.min(120, Math.max(10, Number(env.VISIBLE_MAX ?? 100))),
   tickMs: Number(env.TICK_MS ?? 50),
   viewDistance: Number(env.VIEW_DISTANCE ?? 0),
   // On Render, default to the service's own URL (RENDER_EXTERNAL_URL) so other
@@ -50,7 +60,7 @@ const realm = createRealm({
   maxRooms: Number(env.MAX_ROOMS ?? 20),
   firebaseProjectId: FIREBASE_PROJECT_ID,
 });
-const feedback = createFeedback({ dataDir: DATA_DIR, projectId: FIREBASE_PROJECT_ID, timeZone: env.REWARDS_TZ || undefined });
+const feedback = createFeedback({ clientIp, dataDir: DATA_DIR, projectId: FIREBASE_PROJECT_ID, timeZone: env.REWARDS_TZ || undefined });
 const adminApi = createAdminApi({ realm, feedback, projectId: FIREBASE_PROJECT_ID });
 
 const MIME = {

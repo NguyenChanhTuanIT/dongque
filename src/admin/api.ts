@@ -13,6 +13,22 @@ export interface LivePlayer {
   connectedAt: number;
   x: number;
   z: number;
+  /** Signs worth a look (server/realm.mjs listPlayers); nothing is decided from them automatically. */
+  flags?: {
+    /** Chat lines dropped (too fast / repeated) and chat mutes this session. */
+    chatDrops: number;
+    chatMutes: number;
+    /** Chat lines with profane words masked. */
+    chatMasked: number;
+    /** Sudden position jumps (teleport hacks, or respawns). */
+    jumps: number;
+    /** Share of online time counted (below 1: many wallets on the IP); null = not earning. */
+    earningRate: number | null;
+    /** Sessions connected from the same IP (this one included). */
+    sameIp: number;
+    /** Guest from the IP / tab of a banned account (cannot chat). */
+    guestBlocked: boolean;
+  };
 }
 
 export type FeedbackStatus = 'new' | 'read' | 'done';

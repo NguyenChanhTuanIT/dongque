@@ -302,6 +302,8 @@ button[hidden] { display: none; }
 }
 .badge.live { background: var(--live-bg); color: var(--live-text); }
 .badge.reload { background: var(--reload-bg); color: var(--reload-text); }
+.badge.warn { background: var(--reload-bg); color: var(--reload-text); }
+.badge:not(.live):not(.reload):not(.warn):not(.danger) { background: var(--hover); color: var(--muted); }
 
 /* --- Overview ----------------------------------------------------------- */
 

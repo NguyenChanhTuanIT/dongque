@@ -301,14 +301,14 @@ html {
   font-weight: 400;
   letter-spacing: -0.03em;
   color: #8d8981;
-  margin: 0 0 1.3em;
+  margin: 0 0 0.6em;
 }
 #info p {
-  font-size: 30px;
-  letter-spacing: -0.03em;
-  line-height: 1em;
+  /* Body size of the other panels (help, rewards, shop: 15px), not a headline. */
+  font-size: 16px;
+  line-height: 1.5;
   color: #989389;
-  margin: 0 0 1.3em;
+  margin: 0 0 0.9em;
 }
 #info p:last-of-type { margin: 0; }
 #info .cnt p a,
@@ -860,7 +860,7 @@ nav .cnt {
   #modal .button-close { top: 15px; right: 15px; }
   #info .cnt { padding: 64px 26px 40px; margin: 20px; }
   #info h1 { font-size: 32px; }
-  #info p { font-size: 25px; }
+  #info p { font-size: 15px; }
   #info .button-close { top: 24px; right: 24px; }
   .nav-modal { padding: 20px; }
   .nav-modal .modal-card .look-menu { padding: 40px 26px 30px; max-width: calc(100vw - 40px); max-height: calc(100vh - 40px); }
@@ -933,8 +933,7 @@ nav .nav-menu .color-square {
   vertical-align: 1px;
 }
 :is(nav, .nav-modal) .help-menu kbd.together { background: #c0563b; }
-:is(nav, .nav-modal) .help-menu button.primary { background: #716c66; color: #f9efdc; }
-:is(nav, .nav-modal) .help-rows {
+:is(nav, .nav-modal) .help-menu button.primary { background: #716c66; color: #f9efdc; }:is(nav, .nav-modal) .help-rows {
   display: flex;
   flex-direction: column;
   margin: 0;
@@ -1214,10 +1213,24 @@ nav svg.flower {
 :is(nav, .nav-modal) .rewards-week li i { font-style: normal; opacity: 0.8; }
 :is(nav, .nav-modal) .rewards-week li.today { border-color: #716c66; background: rgba(113, 108, 102, 0.12); }
 :is(nav, .nav-modal) .rewards-week li.checked { background: #9bc2a4; border-color: #6f9c7b; color: #2f4a37; }
+/* Today, not checked in yet: the whole cell is the check-in button. */
+:is(nav, .nav-modal) .rewards-week li.claim { padding: 0; border-color: #e0a34a; background: rgba(224, 163, 74, 0.18); }
+:is(nav, .nav-modal) .rewards-week li.claim:hover { background: rgba(224, 163, 74, 0.32); }
+:is(nav, .nav-modal) .rewards-week li.claim button {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 4px 0;
+  cursor: pointer;
+}
+:is(nav, .nav-modal) .rewards-week li.claim button:focus-visible { outline: 2px solid #716c66; outline-offset: 1px; }
 :is(nav, .nav-modal) .rewards-progress { width: 100%; height: 8px; border-radius: 4px; background: rgba(113, 108, 102, 0.2); overflow: hidden; }
 :is(nav, .nav-modal) .rewards-progress div { height: 100%; background: #e0a34a; transition: width 0.5s; }
 :is(nav, .nav-modal) .rewards-tiers { display: flex; flex-direction: column; gap: 6px; width: 100%; margin: 0; padding: 0; list-style: none; }
-:is(nav, .nav-modal) .rewards-tiers li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+:is(nav, .nav-modal) .rewards-tiers li { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 :is(nav, .nav-modal) .rewards-menu .rewards-tiers li span { width: auto; font-size: 15px; opacity: 1; }
 :is(nav, .nav-modal) .rewards-note { margin: 0; font-size: 13px; opacity: 0.8; }
 :is(nav, .nav-modal) .rewards-toast { margin: 0; font-size: 15px; color: #8a5a3c; min-height: 1.2em; }

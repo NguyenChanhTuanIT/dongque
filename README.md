@@ -37,7 +37,7 @@ npm run typecheck  # tsc -b --noEmit
 | Sprint | hold `Shift` | push the joystick to the rim | RB / R1 or L3 |
 | Jump | `Space`, or quick right-click | tap | A / ✕ |
 | Chat (whole room) | `Enter` to open, `Enter` to send, `Esc` to close | chat button | — |
-| Emote | `E` wave · `1` wave · `2` clap · `3` dance · `4` bored · `5` sit cross-legged · `6` fishing · `7` lie on the belly · `8` sunbathe · `9` guitar · `0` kite · `Q` ice cream · `H` high five · `C` walk a dog · `M` walk a cat, or the smiley button menu | smiley button menu | Y / △ (wave) |
+| Emote | `E` wave · `1` wave · `2` clap · `3` dance · `4` bored · `5` sit cross-legged · `6` fishing · `7` lie on the belly · `8` sunbathe · `9` guitar · `0` kite · `Q` ice cream · `H` high five · `C` walk the puppy · `M` walk the beagle (the other two dogs: menu only), or the smiley button menu | smiley button menu | Y / △ (wave) |
 
 Wave and clap stop after 3 s; the others last until you move (pressing the
 same emote again also stops it) — except guitar, kite, ice cream and walking a pet,
@@ -50,8 +50,9 @@ players. Wave, clap, dance, sit, fishing, lying prone and sunbathing are generat
 code from the idle pose (`src/scene/emotes.ts`), so no extra animation assets are needed; the
 fishing rod, line, bobber and fish are small instanced props that follow each
 character's right hand (`src/scene/fishing.ts`); the guitar sits in front of the
-belly with its neck in the left hand (`src/scene/guitar.ts`). The dog / cat (`src/scene/pets.ts`)
-is a low-poly pet that follows its owner on a leash, legs stepping with its speed.
+belly with its neck in the left hand (`src/scene/guitar.ts`). The dogs (`src/scene/pets.ts`, four glTF models sold in the shop, one emote state each: 14, 15, 65, 66)
+follow their owner on a leash, hopping and swaying as they walk; each model
+loads the first time someone walks that dog.
 
 ## NPCs
 
@@ -109,9 +110,18 @@ same skeleton, or code) with a `PART` id, **append** the item to its slot in
 ## Chat & display names
 
 - **Chat:** every line goes to the whole room (the log at the bottom left) and
-  pops up as a speech bubble over the speaker (`src/components/nametags.ts`). The relay cleans each line
-  (invalid UTF-8, control/bidi characters, max 160 characters) and allows a
-  burst of 5 lines, then one every 2 s.
+  pops up as a speech bubble over the speaker (`src/components/nametags.ts`);
+  past `VISIBLE_MAX` players, only to the players who can see the speaker. The
+  relay cleans each line (invalid UTF-8, control/bidi characters, max 160
+  characters) and masks profane words with `*` (`server/profanity.mjs`: an
+  accented list and an unaccented / leetspeak list, look-alike letters folded;
+  edit the two arrays at the top).
+- **Anti-spam:** budgets per account (guests: per IP), kept across reconnects
+  and tabs: a burst of 5 lines, then one every 2 s, plus a shared budget per IP
+  that grows with the people on it. The same line again within 30 s is dropped
+  (NOTICE 7); 6 dropped lines in a minute mute the sender for 1 min, doubling
+  up to 10 min (NOTICE 8). Fishing news (`🎣 …`) only count as news from a
+  player who is fishing, at most one per 5 s.
 - **Names:** players show as `Người dùng ẩn danh <id>` until they have an
   account name. The name is picked when signing up (*Đăng ký* in the sign-in
   modal; email + password). The account card at the top of the character panel
@@ -145,8 +155,16 @@ currency of the shop (below). Every player gets, per calendar day in Vietnam tim
   `visibilitychange`); several tabs count once.
 
 The relay decides and stores everything (`server/wallets.mjs`), so players
-cannot edit their balance: `wallets.json` in `DATA_DIR` (default
-`server/data/`, git-ignored).
+cannot edit their balance: `wallets.json` (snapshot) + `wallets.journal`
+(changed wallets appended within 1 s; online time alone within 60 s) in
+`DATA_DIR` (default `server/data/`, git-ignored). The snapshot is rewritten
+only on shutdown or once the journal outgrows it; a damaged snapshot stops the
+server instead of starting empty. On Render, put `DATA_DIR` on a Persistent
+Disk, or both files are lost on every deploy.
+Online time from many wallets on one IP counts slower past the first 4
+(`MAX_EARNING_PER_IP`), and only while the player walks a couple of metres,
+jumps, uses an emote or chats now and then (standing still / the automatic
+"bored" pose does not count).
 `REWARDS_TZ` changes the calendar time zone.
 
 **Guests** (not signed in) play the same way with a wallet tied to their browser
@@ -267,12 +285,12 @@ The letter button (✉) in the corner menu opens *Góp ý*: one textarea
 thank-you letter card instead of the form until the next day.
 
 - **Anti-spam:** one feedback per calendar day (Vietnam time, `REWARDS_TZ`)
-  per account when signed in, per IP for guests; at most 5 per IP and 1000 for
-  everyone per day. The relay enforces it (`server/feedback.mjs`,
+  per account when signed in, per IP for guests; at most 5 per IP, 300 for all
+  guests and 1000 for all accounts per day (a guest flood never blocks accounts). The relay enforces it (`server/feedback.mjs`,
   `POST /api/feedback`, answers 429 `already`); the browser also remembers
   the day so the thank-you card shows right away. IPs are only kept hashed
-  (salted per day) for the counters. Behind a proxy the IP comes from
-  `X-Forwarded-For`, like the WebSocket limits.
+  (salted per day) for the counters. Behind a proxy the IP is read as set by
+  `TRUST_PROXY` / `CLIENT_IP_HEADER`, like the WebSocket limits.
 - **Storage:** `feedback.json` in `DATA_DIR` (text, time, uid, browser,
   status, admin note); the oldest go past 5000.
 - **Admin:** *Người dùng → Góp ý* lists them newest first with the sender's
@@ -289,7 +307,9 @@ Code: `src/components/feedback.ts` (panel), `server/feedback.mjs`,
 Remote players go through our own relay, `server/realm.mjs` (Node.js + `ws`),
 not a third-party network. Clients send a 26-byte binary state frame when they
 move (plus a 2 s heartbeat); the server keeps the latest frame per player and
-broadcasts the changed ones 20×/s to everyone in the same room.
+broadcasts the changed ones 20×/s. Everyone plays in one room (`main`; the
+client's `?room=` is ignored); past `VISIBLE_MAX` players each client is sent
+the nearest ones only (`server/interest.mjs`).
 
 - **Development:** `npm run dev` already runs the relay on the same port
   (`ws://localhost:5173/mp`, counts at `/health`). Nothing else to start.
@@ -302,10 +322,18 @@ broadcasts the changed ones 20×/s to everyone in the same room.
   host. Override with `VITE_MULTIPLAYER_URL` at build time or the
   *Địa chỉ server multiplayer* field in the admin panel.
 - **Server settings (env):** `PORT`, `HOST`, `STATIC_DIR`,
-  `MAX_PLAYERS_PER_ROOM` (127), `TICK_MS` (50), `VIEW_DISTANCE` (0 = relay
-  everyone; otherwise only nearby players), `ALLOWED_ORIGINS`,
-  `MAX_CONNECTIONS` (1000), `MAX_PER_IP` (12, from `X-Forwarded-For` behind a
-  proxy), `MAX_ROOMS` (20),
+  `MAX_PLAYERS_PER_ROOM` (1000; everyone plays in the one room `main`),
+  `VISIBLE_MAX` (100: past this many players, each client is sent only the
+  nearest 100, gets a HIDE for those leaving its view, and chat reaches the
+  players who can see the speaker; the game draws 128 characters), `TICK_MS`
+  (50), `VIEW_DISTANCE` (0 = no distance limit; otherwise also only players
+  this close), `ALLOWED_ORIGINS`,
+  `MAX_CONNECTIONS` (1000, raise it with `MAX_PLAYERS_PER_ROOM`), `MAX_PER_IP` (12),
+  `MAX_EARNING_PER_IP` (4: per IP the first 4 wallets earning online time count
+  in full, the next 4 at ×½, the rest at ×¼; 0 = no slow-down), `CLIENT_IP_HEADER` / `TRUST_PROXY` (how the client IP is read behind
+  a proxy, see `server/client-ip.mjs`; set one in production, otherwise the
+  first `X-Forwarded-For` entry is used and clients can forge it; `LOG_CLIENT_IP=1`
+  logs what the proxy sends, to pick the right value),
   `FIREBASE_PROJECT_ID` (account-verified names, see above; with Docker pass
   `-e FIREBASE_PROJECT_ID=...`).
 - **HTTP:** brotli/gzip for JS, CSS, HTML, JSON and wasm; hashed build files
@@ -313,15 +341,23 @@ broadcasts the changed ones 20×/s to everyone in the same room.
   security headers (CSP, `nosniff`, `X-Frame-Options: DENY`, HSTS,
   `Referrer-Policy`). The CSP allows `unsafe-eval` only because the Basis
   texture transcoder needs `new Function` in its worker.
-- **Moderation:** display names are unique among online players (accents and
-  case ignored) and names like Admin / Quản trị / Hệ thống are refused
-  (NOTICE 6). A kick refuses that IP for 10 min, a ban for 6 h (so the player
-  cannot come back as a guest); unbanning lifts it. Online rewards only count
-  while the player did something (moved, changed pose, chatted) in the last
-  10 min. On Render, `ALLOWED_ORIGINS` defaults to `RENDER_EXTERNAL_URL`.
+- **Moderation:** a display name stays with the account that last used it for
+  30 days, online or not (accents, case and look-alike letters such as a
+  Cyrillic "А" ignored); names like Admin / Quản trị / Hệ thống or with profane
+  words are refused (NOTICE 6 / 2). A kick refuses that IP for 10 min, a ban
+  for 6 h; after that, guests from the banned account's IP or browser tab can
+  play but not chat or invite for 7 days (NOTICE 9, in memory only); unbanning
+  lifts both. The admin page *Đang online* shows signs per player (chat
+  drops / mutes, masked words, position jumps, connections on the same IP,
+  slowed online rewards) for a person to judge; nothing is banned
+  automatically. On Render, `ALLOWED_ORIGINS` defaults to `RENDER_EXTERNAL_URL`.
 - **Protections:** frame validation (size, version, finite coordinates),
   40 frames/s per client (extra dropped, flooding disconnects), 4 KB max
-  message, chat rate limit, ping every 15 s to drop dead connections.
+  message, new connections per IP (30, then one per 2 s), outfit changes
+  shown at most twice a second, sign in / out / rename 4 then one per 5 s,
+  play-together decline / cancel only for a real invitation, no invitation for
+  1.5 s after a position jump (teleport), ping every 15 s to drop dead
+  connections, and in a ≥ 90 % full room connections silent for 3 min.
 
 ## Architecture
 
@@ -358,12 +394,12 @@ loads its 24 subsystems in parallel, then the loader hides and the intro plays.
 
 **Scene modules** (`src/scene/`), `environmentScene.ts` composes 24 subsystems
 (characters, sky, terrain, sea, birds, trees, bushes, lightposts, palmtrees,
-houses, warehouses, machines, rocks, parasols, castles, grass, blockers, ufo,
+houses, warehouses, machines, rocks, parasols, castles, grass, blockers, puppy (glTF, in place of the UFO),
 alien, sign, cats, sloth, gossip), each a `SceneModule` exposing `ready`. The
 sea is a 256px planar reflection; the birds are 25 GPU-computed particles
 following baked curve paths with vertex-texture-animated flapping; grass bends
 away from the character via shared `charPos`/`charSpeed` uniforms; the
-ufo/alien/cats/sloth/gossip each hide one of the 5 secrets.
+puppy (config key `ufo`)/alien/cats/sloth/gossip each hide one of the 5 secrets.
 
 
 ## Layout
@@ -393,6 +429,28 @@ firestore.rules      # Firestore security rules (config read-only for players)
 
 - Original experience: **Relax Afternoon** by **Vicente Lucendo**,
   https://relax-afternoon.vlucendo.com
+- Dog in place of the UFO (`public/assets/models/dog/doggy_meme_dog_ps1.glb`):
+  **"Doggy Meme Dog PS1"** by **rukitu**,
+  https://sketchfab.com/3d-models/doggy-meme-dog-ps1-8f9361ab396e4c21a53bc50a57a740cd,
+  licensed CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); credited
+  in the about panel too. Not modified, only scaled and placed.
+- Shop dog (`public/assets/models/dog/dog_puppy.glb`):
+  **"Dog Puppy"** by **kenchoo**,
+  https://sketchfab.com/3d-models/dog-puppy-72331763040e4314b154f84348fe0957,
+  licensed CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); credited
+  in the about panel too. Not modified, only scaled and placed.
+- Shop dog (`dog.glb`): **"Dog"** by **Yarelon** (https://sketchfab.com/yarelon111),
+  CC BY 4.0.
+- Shop dog (`low_poly_dog.glb`): **"Low Poly Dog"** by **Jéssica Magno**
+  (https://sketchfab.com/jessica_magno), CC BY 4.0. Changed: its
+  specular-glossiness material was converted to metallic-roughness (three r148
+  no longer reads the former).
+- Shop dog (`dog_with_bomb.glb`): **"Dog With Bomb"** by **hamsterspit**
+  (https://sketchfab.com/hamsterspit), **CC BY-NC-ND 4.0**: non-commercial use
+  only, no modified versions. Remove it (catalog `pet.dog4`, `DOGS[3]` in
+  `src/scene/pets.ts`) if the game ever makes money (ads, paid items…).
+- In-game, the shop dogs are drawn matte (only their colour texture is used)
+  and frozen in one pose, with a small procedural hop / sway.
 - All 3D assets, textures, audio, fonts and the original code belong to their
   respective authors; this project is not affiliated with or endorsed by the
   original author.

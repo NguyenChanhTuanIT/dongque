@@ -9,13 +9,13 @@ export function guestWarning(): string {
   if (!isLoginAvailable()) {
     return (
       '<div class="look-group guest-note" role="note">' +
-      '<p><b>Bạn đang chơi ẩn danh.</b> Hoa và đồ chỉ lưu trong tab này, sẽ <b>mất khi đóng tab</b>.</p>' +
+      '<p><b>Bạn đang chơi ẩn danh.</b> Hoa và đồ có thể sẽ <b>mất khi đóng trình duyệt</b>.</p>' +
       '</div>'
     );
   }
   return (
     '<div class="look-group guest-note" role="note">' +
-    '<p><b>Bạn đang chơi ẩn danh.</b> Hoa và đồ chỉ lưu trong tab này, sẽ <b>mất khi đóng tab</b>. Đăng ký để đồng bộ vào tài khoản.</p>' +
+    '<p><b>Bạn đang chơi ẩn danh.</b> Hoa và đồ có thể sẽ <b>mất khi đóng trình duyệt</b>. Đăng ký để đồng bộ vào tài khoản.</p>' +
     '<button type="button" class="primary" data-register>Đăng ký</button>' +
     '<button type="button" data-login>Đã có tài khoản</button>' +
     '</div>'

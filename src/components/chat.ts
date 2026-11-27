@@ -10,7 +10,7 @@
 // buttons carry `data-slot` (an emote slot) so touch screens can use them.
 
 import { events } from '../core/events';
-import { CHAT_MAX_CHARS, CLOSE_BANNED, NOTICE_BANNED, NOTICE_CHAT_TOO_FAST } from '../engine/multiplayer/socket';
+import { CHAT_MAX_CHARS, CLOSE_BANNED, NOTICE_BANNED, NOTICE_CHAT_MUTED, NOTICE_CHAT_REPEAT, NOTICE_CHAT_TOO_FAST, NOTICE_GUEST_BLOCKED } from '../engine/multiplayer/socket';
 import { displayName } from '../social/presence';
 import { announcementLine, isAnnouncement } from './announce';
 
@@ -80,6 +80,9 @@ export class ChatPanel {
     });
     events.on('mp_notice', (code: number) => {
       if (code === NOTICE_CHAT_TOO_FAST) this.addLine('', 'Bạn gửi hơi nhanh, chờ một chút nhé.', 'system');
+      else if (code === NOTICE_CHAT_REPEAT) this.addLine('', 'Tin nhắn này vừa gửi rồi, đừng lặp lại nhé.', 'system');
+      else if (code === NOTICE_CHAT_MUTED) this.addLine('', 'Bạn gửi quá nhiều tin nhắn nên tạm thời không chat được, thử lại sau ít phút.', 'system');
+      else if (code === NOTICE_GUEST_BLOCKED) this.addLine('', 'Khách từ mạng này tạm thời không chat được. Đăng nhập tài khoản để trò chuyện nhé.', 'system');
       else if (code === NOTICE_BANNED) this.addLine('', 'Tài khoản này đã bị khoá, bạn đang chơi với tư cách khách.', 'system');
     });
     events.on('mp_kicked', (code: number) => {

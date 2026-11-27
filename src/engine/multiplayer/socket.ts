@@ -27,6 +27,8 @@ const MSG_SOCIAL = 9;
 const MSG_TIME = 10;
 /** [u16 count] players in the room, us included (server/realm.mjs). */
 const MSG_ONLINE = 11;
+/** [12][u16 n][n × u32 id]: out of our view in a crowded room (server/realm.mjs). */
+const MSG_HIDE = 12;
 const CLIENT_OUTFIT = 2; // client → server: [2][u8 n][n bytes]
 const CLIENT_PROFILE = 3;
 const CLIENT_CHAT = 4;
@@ -75,6 +77,12 @@ export const NOTICE_CHAT_TOO_FAST = 4;
 export const NOTICE_BANNED = 5;
 /** Display name taken by another player online, or reserved (admin, system…). */
 export const NOTICE_NAME_TAKEN = 6;
+/** The same chat line was sent again too soon (server/realm.mjs CHAT_REPEAT_MS). */
+export const NOTICE_CHAT_REPEAT = 7;
+/** Chat muted for a while after too many dropped lines. */
+export const NOTICE_CHAT_MUTED = 8;
+/** Guests of this network / tab cannot chat or invite for now (a banned account came from here); accounts can. */
+export const NOTICE_GUEST_BLOCKED = 9;
 /** WebSocket close codes the relay uses for admin actions (no automatic reconnect). */
 export const CLOSE_KICKED = 4001;
 export const CLOSE_BANNED = 4003;
@@ -317,6 +325,14 @@ export class SocketConnection implements MultiplayerConnection {
           this._clockRtt = rtt;
           this._clockOffset = server + rtt / 2 - now;
         }
+        return;
+      }
+      case MSG_HIDE: {
+        // Crowded room: these players went out of our view. Drop the
+        // characters but keep names / outfits for when they come back.
+        if (view.byteLength < 3) return;
+        const n = Math.min(view.getUint16(1, true), (view.byteLength - 3) >> 2);
+        for (let i = 0; i < n; i++) this._remove(String(view.getUint32(3 + i * 4, true)));
         return;
       }
       case MSG_ONLINE: {

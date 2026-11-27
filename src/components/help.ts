@@ -4,7 +4,7 @@
 // Four tabs in the same modal card as the other nav panels (overlay.ts).
 
 import { events } from '../core/events';
-import { EMOTES } from '../scene/emotes';
+import { EMOTES, emoteKeyHtml } from '../scene/emotes';
 import { itemForEmote } from '../shop/catalog';
 import { addPanelBar } from './panelBar';
 import { mountPanelModal } from './overlay';
@@ -55,11 +55,11 @@ function basicsHtml(): string {
 function emotesHtml(): string {
   const items = EMOTES.map((e) => {
     const item = itemForEmote(e.state);
-    const key = e.key ? kbd(e.key) : '<kbd class="together">♥</kbd>';
+    const key = emoteKeyHtml(e);
     const need = item ? `<small>cần ${item.label}</small>` : '';
     return `<li>${key}<span>${e.label}</span>${need}</li>`;
   }).join('');
-  return `<p class="rewards-note">Bấm phím hoặc chọn từ nút mặt cười. Đa số động tác kéo dài tới khi bạn di chuyển; bấm lại phím đó để dừng.</p>
+  return `<p class="rewards-note">Bấm phím hoặc chọn từ nút mặt cười.</p>
     <ul class="help-emotes">${items}</ul>
     <p class="rewards-note"><kbd class="together">♥</kbd> Động tác đôi (tặng hoa, nắm tay, nhảy đôi…): đứng gần một người chơi khác rồi chọn trong menu, người kia cần đồng ý. Động tác "cần …" phải mua món đó trong Cửa hàng trước.</p>`;
 }

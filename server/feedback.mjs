@@ -20,12 +20,18 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createTokenVerifier } from './firebase-auth.mjs';
+import { createClientIp } from './client-ip.mjs';
+
+/** Used when the caller passes no clientIp (index.mjs always does). */
+const defaultClientIp = createClientIp({ log: () => {} });
 
 export const FEEDBACK_MIN_CHARS = 5;
 export const FEEDBACK_MAX_CHARS = 1000;
 export const FEEDBACK_STATUSES = ['new', 'read', 'done'];
 const MAX_PER_IP_PER_DAY = 5;
 const MAX_PER_DAY = 1000;
+/** Guests together, so a flood of guest feedback never locks out signed-in players. */
+const MAX_GUESTS_PER_DAY = 300;
 /** Oldest feedback is dropped past this many. */
 const MAX_KEPT = 5000;
 const MAX_BODY = 16 * 1024;
@@ -69,7 +75,7 @@ export function cleanFeedback(raw) {
  * @param {string} [options.timeZone]
  * @param {(msg: string) => void} [options.log]
  */
-export function createFeedback({ dataDir, projectId, timeZone = 'Asia/Ho_Chi_Minh', log = (msg) => console.log(`[feedback] ${msg}`) }) {
+export function createFeedback({ clientIp = defaultClientIp, dataDir, projectId, timeZone = 'Asia/Ho_Chi_Minh', log = (msg) => console.log(`[feedback] ${msg}`) }) {
   const file = path.join(dataDir, 'feedback.json');
   const verify = projectId ? createTokenVerifier(projectId) : null;
   const dayFormat = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -78,7 +84,7 @@ export function createFeedback({ dataDir, projectId, timeZone = 'Asia/Ho_Chi_Min
   /** @type {Feedback[]} newest last */
   let items = [];
   /** Today's counters: key ("u:<uid>" | "ip:<hash>") → count. */
-  let limits = { day: '', salt: '', keys: /** @type {Record<string, number>} */ ({}), total: 0 };
+  let limits = { day: '', salt: '', keys: /** @type {Record<string, number>} */ ({}), total: 0, users: 0, guests: 0 };
   try {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
     items = Array.isArray(data.items) ? data.items : [];
@@ -110,7 +116,7 @@ export function createFeedback({ dataDir, projectId, timeZone = 'Asia/Ho_Chi_Min
   /** Counters of the current day (reset, with a new IP salt, when the day changed). */
   function today(now) {
     const day = dayOf(now);
-    if (limits.day !== day) limits = { day, salt: crypto.randomBytes(16).toString('hex'), keys: {}, total: 0 };
+    if (limits.day !== day) limits = { day, salt: crypto.randomBytes(16).toString('hex'), keys: {}, total: 0, users: 0, guests: 0 };
     return limits;
   }
   const ipKey = (ip, salt) => `ip:${crypto.createHash('sha256').update(`${salt}|${ip}`).digest('base64url').slice(0, 22)}`;
@@ -132,11 +138,17 @@ export function createFeedback({ dataDir, projectId, timeZone = 'Asia/Ho_Chi_Min
       return { ok: false, error: 'already', status: 429 };
     }
     if ((day.keys[addrKey] ?? 0) >= MAX_PER_IP_PER_DAY) return { ok: false, error: 'already', status: 429 };
-    if (day.total >= MAX_PER_DAY) return { ok: false, error: 'busy', status: 503 };
+    // Separate daily caps: guests share MAX_GUESTS_PER_DAY, accounts MAX_PER_DAY.
+    if (userKey ? (day.users ?? 0) >= MAX_PER_DAY : (day.guests ?? 0) >= MAX_GUESTS_PER_DAY) return { ok: false, error: 'busy', status: 503 };
 
     day.keys[addrKey] = (day.keys[addrKey] ?? 0) + 1;
-    if (userKey) day.keys[userKey] = 1;
-    else day.keys[`g:${addrKey}`] = 1;
+    if (userKey) {
+      day.keys[userKey] = 1;
+      day.users = (day.users ?? 0) + 1;
+    } else {
+      day.keys[`g:${addrKey}`] = 1;
+      day.guests = (day.guests ?? 0) + 1;
+    }
     day.total++;
 
     const item = {
@@ -207,11 +219,6 @@ export function createFeedback({ dataDir, projectId, timeZone = 'Asia/Ho_Chi_Min
       });
       req.on('error', reject);
     });
-  }
-
-  function clientIp(req) {
-    const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
-    return forwarded || req.socket.remoteAddress || 'unknown';
   }
 
   async function route(req, res) {

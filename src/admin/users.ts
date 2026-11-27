@@ -376,6 +376,25 @@ export function createUserPages(deps: UserPagesDeps) {
 
   // --- Page: online players -----------------------------------------------------
 
+  /**
+   * Badges for what the relay noticed this session (spam, masked words, jumps,
+   * crowded IP). Hints for a person to judge: shared networks and respawns
+   * show up here too.
+   */
+  function signsOf(p: LivePlayer): Node[] {
+    const f = p.flags;
+    if (!f) return [];
+    const out: Node[] = [];
+    if (f.chatMutes) out.push(badge(`Bị khoá chat ×${f.chatMutes}`, 'danger'));
+    else if (f.chatDrops >= 3) out.push(badge(`Chat bị chặn ×${f.chatDrops}`, 'warn'));
+    if (f.chatMasked >= 3) out.push(badge(`Nói tục ×${f.chatMasked}`, 'warn'));
+    if (f.jumps >= 3) out.push(badge(`Dịch chuyển ×${f.jumps}`, 'warn'));
+    if (f.sameIp >= 5) out.push(badge(`${f.sameIp} kết nối cùng IP`, ''));
+    if (f.earningRate !== null && f.earningRate < 1) out.push(badge(`Quà online ×${String(f.earningRate).replace('.', ',')}`, ''));
+    if (f.guestBlocked) out.push(badge('Khách từ IP bị khoá', 'danger'));
+    return out.length ? [el('div', { className: 'badges' }, out)] : [small('—')];
+  }
+
   function renderOnlinePage(signal: AbortSignal): Node[] {
     if (!deps.isAdmin) return needAdmin();
 
@@ -425,7 +444,7 @@ export function createUserPages(deps: UserPagesDeps) {
       }
       const now = Date.now();
       tableCard.replaceChildren(table(
-        ['Người chơi', 'Tài khoản', 'Phòng', 'Online', 'Vị trí (x, z)', ''],
+        ['Người chơi', 'Tài khoản', 'Phòng', 'Online', 'Vị trí (x, z)', 'Dấu hiệu', ''],
         shown.map((p) => {
           const account = p.uid ? rows?.get(p.uid) : undefined;
           const label = p.name || `Người dùng ẩn danh #${p.id}`;
@@ -447,6 +466,7 @@ export function createUserPages(deps: UserPagesDeps) {
             td([p.room]),
             td([duration(now - p.connectedAt)], 'nowrap'),
             td([`${p.x}, ${p.z}`], 'nowrap mono'),
+            td(signsOf(p)),
             td([actions], 'actions-cell'),
           ]);
         }),

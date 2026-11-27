@@ -145,8 +145,8 @@ export const DEFAULT_CONFIG: SceneConfig = {
   },
   secrets: {
     ufo: {
-      text: "It's a big metallic object. You want to believe it's some kind of vehicle.",
-      distance: 10,
+      text: 'Một chú chó con đang ngồi chờ ai đó. Có lẽ nó cũng muốn được đi dạo cùng bạn.',
+      distance: 3,
       position: [-56.9402, 2.6553, 22.7015],
       rotation: [0, 0, 0],
       scale: 1,

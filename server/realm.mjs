@@ -15,6 +15,9 @@
 //    10 TIME     [f64 clientMs][f64 serverMs]    answer to a TIME ping (shared clock)
 //    11 ONLINE   [u16 count]                     players in the room (us included), sent on
 //                                                join and whenever it changes (at most once a tick)
+//    12 HIDE     [u16 n][n × u32 id]             crowded room: these players left your view
+//                                                (only the nearest visibleMax are sent; names /
+//                                                outfits stay known for when they come back)
 //   close codes: 4001 kicked by an admin · 4003 account banned (clients do not reconnect)
 //   client → server   [2] OUTFIT · [3] PROFILE [u16 n][Firebase ID token][u8 m][name] (n = m = 0: sign out)
 //                     · [4] CHAT [UTF-8 text] · [5] REWARD [u8 action] (0 status, 1 check-in, 2-4 online tier 0-2)
@@ -50,6 +53,10 @@ import { fileURLToPath } from 'node:url';
 import { createTokenVerifier } from './firebase-auth.mjs';
 import { createWallets, GUEST_PREFIX } from './wallets.mjs';
 import { createPriceBook, loadCatalog } from './shop.mjs';
+import { createBuckets } from './rate-limit.mjs';
+import { foldText, hasProfanity, maskProfanity } from './profanity.mjs';
+import { nearest } from './interest.mjs';
+import { createClientIp } from './client-ip.mjs';
 
 export const STATE_BYTES = 26;
 export const STATE_VERSION = 1;
@@ -64,6 +71,10 @@ const MSG_WALLET = 8;
 const MSG_SOCIAL = 9;
 const MSG_TIME = 10;
 const MSG_ONLINE = 11;
+/** [12][u16 n][n × u32 id]: these players left your view (crowded room); keep their name / outfit. */
+const MSG_HIDE = 12;
+/** How often each player's view (nearest visibleMax players) is recomputed in a crowded room. */
+const VIEW_REFRESH_MS = 500;
 const CLIENT_OUTFIT = 2; // client → server: [2][u8 n][n bytes], item index per slot
 const CLIENT_PROFILE = 3;
 const CLIENT_CHAT = 4;
@@ -103,11 +114,33 @@ export const NOTICE_CHAT_TOO_FAST = 4;
 export const NOTICE_BANNED = 5;
 /** The display name is taken by another player online, or reserved (admin, system…). */
 export const NOTICE_NAME_TAKEN = 6;
+/** The same chat line again within CHAT_REPEAT_MS: dropped. */
+export const NOTICE_CHAT_REPEAT = 7;
+/** Too many dropped chat lines in a row: chat muted for a while (escalating). */
+export const NOTICE_CHAT_MUTED = 8;
+/** Guests from the IP / tab of a recently banned account cannot chat or invite (accounts can). */
+export const NOTICE_GUEST_BLOCKED = 9;
+/** How long guests of a banned account's IP / tab stay without chat (in memory: a restart forgets it). */
+const GUEST_BLOCK_MS = 7 * 24 * 60 * 60_000;
 /** Kicked / banned players' IPs are refused for a while (they would come back as guests). */
 const KICK_BLOCK_MS = 10 * 60_000;
 const BAN_BLOCK_MS = 6 * 60 * 60_000;
 /** Online rewards only count while the player did something in this window (anti idle bots). */
 const DEFAULT_ACTIVE_MS = 10 * 60_000;
+/** Walking this far (m) from the last active spot counts as activity. */
+const ACTIVE_MOVE = 2;
+/** The automatic pose after standing still (src/scene/emotes.ts 'bored'): not activity. */
+const BORED_STATE = 2;
+/** A position change of at least JUMP_MIN_DIST m faster than JUMP_SPEED m/s is a jump (teleport / respawn). */
+const JUMP_MIN_DIST = 10;
+const JUMP_SPEED = 40;
+/** The only room: every player is in it, whatever ?room= the client asks for. */
+const SINGLE_ROOM = 'main';
+/** A room this full (share of maxPlayersPerRoom) closes connections silent for SILENT_MS. */
+const CROWDED_SHARE = 0.9;
+const SILENT_MS = 3 * 60_000;
+/** No play-together invitations this long after a jump. */
+const JUMP_COOLDOWN_MS = 1_500;
 /** Names nobody may take (impersonating staff / the game), compared without accents. */
 const RESERVED_NAMES = /admin|quan ?tri|moderator|\bmod\b|he ?thong|system|game ?master|\bgm\b|ban quan ly|support|ho ?tro/;
 export const CLOSE_KICKED = 4001;
@@ -117,9 +150,42 @@ const BAN_CACHE_MS = 30_000;
 const NAME_MIN_CHARS = 2;
 const NAME_MAX_CHARS = 20;
 const CHAT_MAX_CHARS = 160;
-/** Chat budget: a burst of CHAT_BURST messages, refilled one per CHAT_REFILL_MS. */
+/**
+ * Chat budget: a burst of CHAT_BURST messages, refilled one per CHAT_REFILL_MS,
+ * per sender (the account when signed in, else the IP), kept across reconnects
+ * and shared by all tabs. Each IP also has a larger shared budget (several
+ * accounts on one network, or one person with many accounts).
+ */
 const CHAT_BURST = 5;
 const CHAT_REFILL_MS = 2_000;
+const CHAT_IP_BURST = 15;
+const CHAT_IP_REFILL_MS = 500;
+/** A line equal to one of the sender's last CHAT_REPEAT_KEEP lines within this window is dropped. */
+const CHAT_REPEAT_MS = 30_000;
+const CHAT_REPEAT_KEEP = 3;
+/** CHAT_STRIKES dropped lines within CHAT_STRIKE_WINDOW_MS mute the sender (account and IP). */
+const CHAT_STRIKES = 6;
+const CHAT_STRIKE_WINDOW_MS = 60_000;
+/** First mute; each new mute within CHAT_MUTE_MEMORY_MS doubles it, up to CHAT_MUTE_MAX_MS. */
+const CHAT_MUTE_MS = 60_000;
+const CHAT_MUTE_MAX_MS = 10 * 60_000;
+const CHAT_MUTE_MEMORY_MS = 60 * 60_000;
+/** At most one "too fast / muted" notice per sender this often (the notices are spam too). */
+const CHAT_NOTICE_MS = 3_000;
+/** Outfit changes are shown to the room at most this often per player (the last one wins). */
+const OUTFIT_MIN_MS = 500;
+/** Sign in / sign out / name changes: a burst, then one per PROFILE_REFILL_MS. */
+const PROFILE_BURST = 4;
+const PROFILE_REFILL_MS = 5_000;
+/** Decline / cancel / end of play-together: a burst, then one per second. */
+const SOCIAL_MISC_BURST = 10;
+const SOCIAL_MISC_REFILL_MS = 1_000;
+/** Fishing news ("🎣 …", src/components/announce.ts): at most one per player this often. */
+const ANNOUNCE_PREFIX = '🎣';
+const ANNOUNCE_MIN_MS = 5_000;
+/** New WebSocket connections per IP: a burst, then one per CONNECT_REFILL_MS (reconnect loops). */
+const CONNECT_BURST = 30;
+const CONNECT_REFILL_MS = 2_000;
 /** Minimum delay between two profile (name) changes. */
 const PROFILE_COOLDOWN_MS = 3_000;
 /** Large enough for a Firebase ID token (~1 KB) plus a name, or a chat line. */
@@ -128,17 +194,16 @@ const utf8 = new TextDecoder('utf-8', { fatal: true });
 const MAX_OUTFIT_SLOTS = 16;
 const MAX_OUTFIT_ITEM = 63;
 const ENTRY_BYTES = 4 + STATE_BYTES;
-const ROOM_NAME = /^[a-z0-9_-]{1,32}$/i;
 /** Positions/angles outside this range are rejected as garbage. */
 const MAX_ABS_COORD = 10_000;
 /** Highest animation state: 0 ground, 1 airborne, 2 bored, 3 wave, 4 clap, 5 dance,
  *  6 sit cross-legged, 7 fishing, 8 lying prone, 9 sunbathing, 10 guitar,
- *  11 kite, 12 ice cream, 13 high five, 14 walking a dog, 15 walking a cat,
+ *  11 kite, 12 ice cream, 13 high five, 14 / 15 walking the shop's 1st / 2nd dog,
  *  16 … 38 countryside emotes, stone benches, play together, 39 … 42 fishing
  *  mini-game stages, 43 catching butterflies, 44 … 64 holding up a caught fish
- *  (one per species) (src/scene/emotes.ts
+ *  (one per species), 65 … 66 walking the shop's 3rd / 4th dog (src/scene/emotes.ts
  *  MAX_NET_STATE). The field has 7 bits (bit 7 = sprinting). */
-const MAX_ANIM_STATE = 64;
+const MAX_ANIM_STATE = 66;
 /** Fishing mini-game stages (bite, fight, landed, snapped) and holding up a catch (44 … 64): they need the fishing rod like state 7. */
 const FISH_STATE = 7;
 /** Items that can break and be lost (then bought again): the fishing rod. */
@@ -149,7 +214,7 @@ const ANIM_MASK = 0x7f;
 /**
  * @typedef {object} RealmOptions
  * @property {string} [path]              URL path that accepts WebSocket upgrades.
- * @property {number} [maxPlayersPerRoom] The game renders at most 128 characters (incl. local).
+ * @property {number} [maxPlayersPerRoom] Default 1000 (one shared room); each client is sent the nearest visibleMax.
  * @property {number} [tickMs]            Broadcast interval.
  * @property {number} [maxMsgsPerSec]     Per-client frame budget; extra frames are dropped.
  * @property {number} [viewDistance]      Only relay players closer than this (0 = everyone).
@@ -167,7 +232,7 @@ const ANIM_MASK = 0x7f;
 export function createRealm(options = {}) {
   const {
     path = '/mp',
-    maxPlayersPerRoom = 127,
+    maxPlayersPerRoom = 1000,
     tickMs = 50,
     maxMsgsPerSec = 40,
     viewDistance = 0,
@@ -179,9 +244,32 @@ export function createRealm(options = {}) {
     firebaseProjectId = '',
     dataDir = nodePath.join(nodePath.dirname(fileURLToPath(import.meta.url)), 'data'),
     timeZone = 'Asia/Ho_Chi_Minh',
+    maxEarningPerIp = 4,
+    // Players each client is sent at most (the game draws 128 characters,
+    // NPCs and the local player included). More players than this in the room:
+    // everyone gets the nearest ones and nearby chat (see tick()).
+    visibleMax = 100,
     log = (msg) => console.log(`[realm] ${msg}`),
   } = options;
-  const wallets = createWallets({ file: nodePath.join(dataDir, 'wallets.json'), timeZone });
+  const clientIp = options.clientIp ?? createClientIp();
+  /** Chat budgets: "u:<uid>" / "ip:<ip>" (guests) and the shared one per IP. */
+  const chatBuckets = createBuckets({ burst: CHAT_BURST, refillMs: CHAT_REFILL_MS });
+  const chatIpBuckets = createBuckets({ burst: CHAT_IP_BURST, refillMs: CHAT_IP_REFILL_MS });
+  const socialBuckets = createBuckets({ burst: SOCIAL_BURST, refillMs: SOCIAL_REFILL_MS });
+  const connectBuckets = createBuckets({ burst: CONNECT_BURST, refillMs: CONNECT_REFILL_MS });
+  /** Keyed like chat (account / IP): reconnecting does not reset them. */
+  const profileBuckets = createBuckets({ burst: PROFILE_BURST, refillMs: PROFILE_REFILL_MS });
+  const socialMiscBuckets = createBuckets({ burst: SOCIAL_MISC_BURST, refillMs: SOCIAL_MISC_REFILL_MS });
+  /** Chat moderation state per key ("u:<uid>" / "ip:<ip>"). */
+  /** @type {Map<string, { recent: Array<{ text: string, at: number }>, strikes: number[], muteUntil: number, muteMs: number, lastMuteAt: number }>} */
+  const chatGuards = new Map();
+  /** "ip:<ip>" / "g:<guest key>" → { until, uid }: guests there may not chat or invite (a banned account came from there). */
+  const guestBlocks = new Map();
+  /** wallet id → when it started earning online time (earliest keep full rate, see updateEarningRates). */
+  const earningSince = new Map();
+  // isLive: a guest wallet with a connected tab is never dropped to make room
+  // (otherwise flooding new guest keys could wipe other players' flowers).
+  const wallets = createWallets({ file: nodePath.join(dataDir, 'wallets.json'), timeZone, isLive: (id) => sessionsOf(id).length > 0 });
   const catalog = loadCatalog();
   const prices = createPriceBook({ projectId: firebaseProjectId, ids: catalog.forSale.map((it) => it.id) });
   prices.warm();
@@ -245,8 +333,7 @@ export function createRealm(options = {}) {
  * @property {number} connectedAt
  * @property {boolean} profilePending
  * @property {number} profileAt  time of the last accepted profile change
- * @property {number} chatTokens
- * @property {number} chatRefillAt
+ * @property {string} ip  client IP (see client-ip.mjs)
    * @property {number} x
    * @property {number} z
    * @property {number} windowStart
@@ -336,8 +423,45 @@ export function createRealm(options = {}) {
   function refreshOnline(uid) {
     if (!uid) return;
     const now = Date.now();
-    if (sessionsOf(uid).some((p) => p.visible && now - p.activeAt < activeMs)) wallets.online(uid);
-    else wallets.offline(uid);
+    if (sessionsOf(uid).some((p) => p.visible && now - p.activeAt < activeMs)) {
+      if (!wallets.counting(uid)) earningSince.set(uid, now);
+      wallets.online(uid);
+    } else {
+      wallets.offline(uid);
+      earningSince.delete(uid);
+    }
+  }
+
+  /**
+   * Many wallets earning from one IP (one person with many accounts / guest
+   * tabs, or a classroom): nobody is stopped, but past the first
+   * maxEarningPerIp wallets (the earliest to start) time counts slower: ×½ for
+   * the next maxEarningPerIp, ×¼ after. A wallet on several IPs gets its best rate.
+   */
+  function updateEarningRates() {
+    /** ip → wallet ids earning with a session there */
+    const byIp = new Map();
+    for (const room of rooms.values()) {
+      for (const p of room.players) {
+        const id = walletIdOf(p);
+        if (!id || !wallets.counting(id)) continue;
+        if (!byIp.has(p.ip)) byIp.set(p.ip, new Set());
+        byIp.get(p.ip).add(id);
+      }
+    }
+    const best = new Map();
+    for (const ids of byIp.values()) {
+      const ranked = [...ids].sort((a, b) => (earningSince.get(a) ?? 0) - (earningSince.get(b) ?? 0));
+      ranked.forEach((id, rank) => {
+        const rate = !maxEarningPerIp || rank < maxEarningPerIp ? 1 : rank < 2 * maxEarningPerIp ? 0.5 : 0.25;
+        best.set(id, Math.max(best.get(id) ?? 0, rate));
+      });
+    }
+    for (const [id, rate] of best) {
+      if (wallets.rate(id) === rate) continue;
+      wallets.setRate(id, rate);
+      for (const p of sessionsOf(id)) sendWallet(p); // the rewards panel shows the rate
+    }
   }
 
   /** Something happened on this session: resume its online time if it was paused. */
@@ -348,12 +472,16 @@ export function createRealm(options = {}) {
   }
 
   /** Accent-free lower case, to compare names ("Quản trị" ~ "quan tri"). */
-  const plainName = (name) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
+  // Also folds look-alike letters ("Аdmin" with a Cyrillic А, "𝐀𝐝𝐦𝐢𝐧"), see profanity.mjs.
+  const plainName = (name) => foldText(name);
 
   /** Whether `name` is reserved or used by another account online. */
   function nameUnavailable(name, uid) {
     const plain = plainName(name);
     if (RESERVED_NAMES.test(plain)) return true;
+    // Held by another account that used it in the last 30 days (offline or not).
+    const owner = wallets.nameOwner(plain);
+    if (owner && owner !== uid) return true;
     for (const room of rooms.values()) {
       for (const p of room.players) if (p.uid !== uid && p.nameText && plainName(p.nameText) === plain) return true;
     }
@@ -478,6 +606,8 @@ export function createRealm(options = {}) {
     const token = buf.subarray(3, 3 + tokenLen).toString('ascii');
     const nameLen = buf[3 + tokenLen];
     if (buf.length !== 4 + tokenLen + nameLen) return;
+    // Signing in / out in a loop re-broadcasts names and outfits to the room.
+    if (player.profilePending || !profileBuckets.take(`p:${player.id}`)) return;
     if (tokenLen === 0 && nameLen === 0) {
       // Signed out: back to a guest name (an empty NAME tells clients so).
       if (player.name) broadcast(room, idMessage(MSG_NAME, player.id, '', true));
@@ -499,6 +629,7 @@ export function createRealm(options = {}) {
       const { uid, provider } = await verifyToken(token);
       if (provider !== 'password') throw new Error(`provider ${provider}`);
       banned = await (options.isBanned ?? isBanned)(uid, token);
+      if (banned) blockGuestsOf(player, uid); // still plays as a guest, but cannot chat / invite
       if (!banned && wantsName && nameUnavailable(name, uid)) {
         notice(player, NOTICE_NAME_TAKEN);
         // Still sign in (rewards, wallet), just without that name.
@@ -523,23 +654,130 @@ export function createRealm(options = {}) {
     if (!wantsName) return;
     player.profileAt = Date.now();
     player.nameText = name;
+    wallets.claimName(player.uid, plainName(name));
     player.name = idMessage(MSG_NAME, player.id, name, true);
     broadcast(room, player.name);
   }
 
+  /** Chat moderation state of `key`, created on first use. */
+  function chatGuard(key) {
+    let g = chatGuards.get(key);
+    if (!g) {
+      g = { recent: [], strikes: [], muteUntil: 0, muteMs: 0, lastMuteAt: 0 };
+      chatGuards.set(key, g);
+    }
+    return g;
+  }
+
+  /** Distinct accounts and guest sessions connected from `ip`. */
+  function peopleOnIp(ip) {
+    const uids = new Set();
+    let guests = 0;
+    for (const room of rooms.values()) {
+      for (const p of room.players) {
+        if (p.ip !== ip) continue;
+        if (p.uid) uids.add(p.uid);
+        else guests++;
+      }
+    }
+    return { accounts: uids.size, guests };
+  }
+
+  /** Whether this guest session comes from the IP / tab of a recently banned account. */
+  function guestBlocked(player, now) {
+    for (const k of [`ip:${player.ip}`, player.guest && `g:${player.guest}`]) {
+      const block = k && guestBlocks.get(k);
+      if (block && block.until > now) return true;
+    }
+    return false;
+  }
+
+  /** Banned account `uid` seen on this session: its IP and guest tab may not chat / invite as guests for GUEST_BLOCK_MS. */
+  function blockGuestsOf(player, uid) {
+    const until = Date.now() + GUEST_BLOCK_MS;
+    guestBlocks.set(`ip:${player.ip}`, { until, uid });
+    if (player.guest) guestBlocks.set(`g:${player.guest}`, { until, uid });
+  }
+
+  /** Who is chatting: the account when signed in, else the IP (all guest tabs of a network). */
+  const chatKeyOf = (player) => (player.uid ? `u:${player.uid}` : `ip:${player.ip}`);
+
+  /** Compared form of a chat line: case, accents, spacing and repeated letters ignored ("Spammm" = "spam"). */
+  const repeatKey = (text) => plainName(text).replace(/[\s\p{P}\p{S}]+/gu, '').replace(/(.)\1+/gu, '$1');
+
+  /** Tell the sender why a line was dropped, at most once per CHAT_NOTICE_MS. */
+  function chatNotice(player, code, now) {
+    if (now - player.chatNoticeAt < CHAT_NOTICE_MS) return;
+    player.chatNoticeAt = now;
+    notice(player, code);
+  }
+
+  /** A dropped line: CHAT_STRIKES within the window mute the account and the IP (escalating). */
+  function chatStrike(player, guards, now) {
+    const [main] = guards;
+    main.strikes = main.strikes.filter((t) => now - t < CHAT_STRIKE_WINDOW_MS);
+    main.strikes.push(now);
+    if (main.strikes.length < CHAT_STRIKES) return false;
+    main.strikes = [];
+    const ms = now - main.lastMuteAt < CHAT_MUTE_MEMORY_MS ? Math.min(CHAT_MUTE_MAX_MS, Math.max(CHAT_MUTE_MS, main.muteMs * 2)) : CHAT_MUTE_MS;
+    for (const g of guards) {
+      g.muteMs = ms;
+      g.lastMuteAt = now;
+      g.muteUntil = Math.max(g.muteUntil, now + ms);
+    }
+    log(`#${player.id} (${player.uid || 'guest'}, ${player.ip}) chat muted for ${ms / 1000}s`);
+    return true;
+  }
+
   function onChat(player, room, buf) {
     const now = Date.now();
-    const refills = Math.floor((now - player.chatRefillAt) / CHAT_REFILL_MS);
-    if (refills > 0) {
-      player.chatTokens = Math.min(CHAT_BURST, player.chatTokens + refills);
-      player.chatRefillAt += refills * CHAT_REFILL_MS;
+    const key = chatKeyOf(player);
+    const ipKey = `ip:${player.ip}`;
+    // A muted account also mutes the guests of its IP (signing out to chat as a
+    // guest does not help), but not the other accounts of that network.
+    const guards = key === ipKey ? [chatGuard(key)] : [chatGuard(key), chatGuard(ipKey)];
+    const [guard] = guards;
+    if (guard.muteUntil > now) return chatNotice(player, NOTICE_CHAT_MUTED, now);
+    // A banned player back as a guest: guests of that IP / tab cannot talk for a while.
+    if (!player.uid && guestBlocked(player, now)) return chatNotice(player, NOTICE_GUEST_BLOCKED, now);
+    // Profane words become '*' for everyone (the sender sees the masked line too).
+    const raw = cleanText(buf.subarray(1), CHAT_MAX_CHARS);
+    let text = maskProfanity(raw);
+    if (text !== raw) player.chatMasked++;
+    // Fishing news show as a system line: only from a player who is fishing
+    // right now (rod owned, else the state was already reset to standing), at
+    // most one per ANNOUNCE_MIN_MS. Anything else loses the 🎣 and is plain chat.
+    if (text.startsWith(ANNOUNCE_PREFIX)) {
+      const anim = player.state ? player.state[21] & ANIM_MASK : 0;
+      const fishing = anim === FISH_STATE || FISH_STAGE_STATES.has(anim);
+      if (fishing && now - player.announceAt >= ANNOUNCE_MIN_MS) player.announceAt = now;
+      else text = text.replace(/^(?:🎣\s*)+/u, '').trim();
     }
-    if (player.chatTokens <= 0) return notice(player, NOTICE_CHAT_TOO_FAST);
-    markActive(player);
-    const text = cleanText(buf.subarray(1), CHAT_MAX_CHARS);
     if (!text) return;
-    player.chatTokens--;
-    broadcast(room, idMessage(MSG_CHAT, player.id, text, false));
+    const drop = (code) => {
+      const muted = chatStrike(player, guards, now);
+      player.chatDrops++;
+      if (muted) player.chatMutes++;
+      if (muted) player.chatNoticeAt = 0; // always say so when it starts
+      chatNotice(player, muted ? NOTICE_CHAT_MUTED : code, now);
+    };
+    // Budgets grow with the people really behind the IP (a classroom, a café):
+    // accounts count one each, guest tabs up to 3 (tabs are free to open).
+    const { accounts, guests } = peopleOnIp(player.ip);
+    const keyScale = key === ipKey ? Math.min(guests, 3) : 1;
+    const ipScale = Math.max(1, (accounts + Math.min(guests, 3)) / 2);
+    if (!chatBuckets.has(key, now, keyScale) || !chatIpBuckets.has(player.ip, now, ipScale)) return drop(NOTICE_CHAT_TOO_FAST);
+    guard.recent = guard.recent.filter((r) => now - r.at < CHAT_REPEAT_MS);
+    const same = repeatKey(text);
+    if (same && guard.recent.some((r) => r.text === same)) return drop(NOTICE_CHAT_REPEAT);
+    chatBuckets.take(key, now, keyScale);
+    chatIpBuckets.take(player.ip, now, ipScale);
+    guard.recent = [...guard.recent, { text: same, at: now }].slice(-CHAT_REPEAT_KEEP);
+    markActive(player);
+    // Small room: everyone. Crowded room: the players who can see the speaker
+    // (a thousand people in one chat box would be unreadable).
+    const line = idMessage(MSG_CHAT, player.id, text, false);
+    for (const p of audienceOf(room, player)) send(p.ws, line);
   }
 
   /** [9][kind][u32 id][activity] */
@@ -564,17 +802,17 @@ export function createRealm(options = {}) {
     if (!target) return;
     const now = Date.now();
     if (kind === SOCIAL_INVITE) {
-      const refills = Math.floor((now - player.socialRefillAt) / SOCIAL_REFILL_MS);
-      if (refills > 0) {
-        player.socialTokens = Math.min(SOCIAL_BURST, player.socialTokens + refills);
-        player.socialRefillAt += refills * SOCIAL_REFILL_MS;
-      }
-      if (player.socialTokens <= 0) return notice(player, NOTICE_CHAT_TOO_FAST);
+      // Same budget across tabs / reconnects of the account (guests: of the IP).
+      const key = chatKeyOf(player);
+      if (!player.uid && guestBlocked(player, now)) return notice(player, NOTICE_GUEST_BLOCKED);
+      if (!socialBuckets.has(key, now)) return notice(player, NOTICE_CHAT_TOO_FAST);
       const dx = player.x - target.x;
       const dz = player.z - target.z;
       if (dx * dx + dz * dz > SOCIAL_RANGE * SOCIAL_RANGE) return;
+      // Just teleported next to someone: wait a moment (walking up is never affected).
+      if (now - player.jumpAt < JUMP_COOLDOWN_MS) return;
       if (activity === ACTIVITY_ICECREAM && !wallets.owns(walletIdOf(player), ICECREAM_ITEM)) return;
-      player.socialTokens--;
+      socialBuckets.take(key, now);
       player.invites.set(target.id, { activity, at: now });
       send(target.ws, socialMessage(SOCIAL_INVITE, player.id, activity));
       return;
@@ -592,17 +830,61 @@ export function createRealm(options = {}) {
       send(player.ws, socialMessage(SOCIAL_ACCEPT, target.id, activity));
       return;
     }
-    if (kind === SOCIAL_DECLINE) target.invites.delete(player.id);
-    else if (kind === SOCIAL_CANCEL) player.invites.delete(target.id);
-    else if (kind !== SOCIAL_END) return;
+    // Decline / cancel only for an invitation that exists; all three are throttled.
+    if (kind === SOCIAL_DECLINE) {
+      if (!target.invites.delete(player.id)) return;
+    } else if (kind === SOCIAL_CANCEL) {
+      if (!player.invites.delete(target.id)) return;
+    } else if (kind !== SOCIAL_END) return;
+    if (!socialMiscBuckets.take(`p:${player.id}`, now)) return;
     send(target.ws, socialMessage(kind, player.id, activity));
   }
 
-  function near(a, b) {
-    if (!viewDistance) return true;
-    const dx = a.x - b.x;
-    const dz = a.z - b.z;
-    return dx * dx + dz * dz <= viewDistance * viewDistance;
+  /** Whether players of `room` only receive the ones near them (crowded room, or VIEW_DISTANCE set). */
+  const filtered = (room) => !!viewDistance || room.players.size - 1 > visibleMax;
+
+  /** [12][u16 n][ids] */
+  function hideMessage(players) {
+    const msg = Buffer.alloc(3 + players.length * 4);
+    msg.writeUInt8(MSG_HIDE, 0);
+    msg.writeUInt16LE(players.length, 1);
+    players.forEach((p, i) => msg.writeUInt32LE(p.id, 3 + i * 4));
+    return msg;
+  }
+
+  /**
+   * Recompute who each player sees: the nearest visibleMax (within
+   * viewDistance if set). Players coming into view are sent their state right
+   * away, players leaving it a HIDE. `null` = sees everyone (small room).
+   */
+  function refreshViews(room) {
+    const crowded = filtered(room);
+    for (const p of room.players) {
+      const before = p.inView;
+      if (!crowded) {
+        if (!before) continue;
+        // Back to a small room: everyone is visible again.
+        p.inView = null;
+        const back = [...room.players].filter((o) => o !== p && o.state && !before.has(o));
+        if (back.length) send(p.ws, entriesBuffer(back));
+        continue;
+      }
+      const after = nearest(p, room.players, visibleMax, before, viewDistance);
+      p.inView = after;
+      const entered = before ? [...after].filter((o) => !before.has(o)) : [];
+      const left = before ? [...before].filter((o) => !after.has(o) && room.players.has(o)) : [...room.players].filter((o) => o !== p && !after.has(o));
+      // HIDE first, so the client never holds more than visibleMax characters.
+      if (left.length) send(p.ws, hideMessage(left));
+      if (entered.length) send(p.ws, entriesBuffer(entered));
+    }
+  }
+
+  /** Players who see `player` (and so get its chat lines / bubbles), itself included. */
+  function audienceOf(room, player) {
+    if (!filtered(room)) return room.players;
+    const out = [player];
+    for (const p of room.players) if (p !== player && p.inView?.has(player)) out.push(p);
+    return out;
   }
 
   /** Broadcast changed states of every room. */
@@ -620,16 +902,38 @@ export function createRealm(options = {}) {
         online.writeUInt16LE(Math.min(room.players.size, 0xffff), 1);
         broadcast(room, online);
       }
+      const now = Date.now();
+      for (const p of room.players) {
+        if (p.outfitPending && now - p.outfitAt >= OUTFIT_MIN_MS) {
+          p.outfitAt = now;
+          p.outfitPending = false;
+          applyOutfit(p, { save: true });
+        }
+      }
+      if (now - (room.viewsAt ?? 0) >= VIEW_REFRESH_MS) {
+        room.viewsAt = now;
+        refreshViews(room);
+      }
       if (room.dirty.size === 0) continue;
       const changed = [...room.dirty].filter((p) => p.state);
-      room.dirty.clear();
-      if (!viewDistance) {
+      const dirty = room.dirty;
+      room.dirty = new Set();
+      if (!filtered(room)) {
         // Same buffer for everyone; receivers skip their own id.
         const buf = entriesBuffer(changed);
         for (const p of room.players) send(p.ws, buf);
       } else {
+        // Each player: the changed ones among those it sees (≤ visibleMax checks).
+        let all = null;
         for (const p of room.players) {
-          const visible = changed.filter((c) => c !== p && near(c, p));
+          if (!p.inView) {
+            // The room just became crowded: everything until its view is computed.
+            all ??= entriesBuffer(changed);
+            send(p.ws, all);
+            continue;
+          }
+          const visible = [];
+          for (const o of p.inView) if (dirty.has(o) && o.state) visible.push(o);
           if (visible.length) send(p.ws, entriesBuffer(visible));
         }
       }
@@ -676,10 +980,31 @@ export function createRealm(options = {}) {
       connectedAt: Date.now(),
       profilePending: false,
       profileAt: 0,
-      chatTokens: CHAT_BURST,
-      chatRefillAt: Date.now(),
-      socialTokens: SOCIAL_BURST,
-      socialRefillAt: Date.now(),
+      /** Client IP (per-IP chat budget, mutes, online reward cap). */
+      ip,
+      /** Last "too fast / muted" notice sent to this session. */
+      chatNoticeAt: 0,
+      /** Last outfit shown to the room; a newer one waits for the tick when set too soon. */
+      outfitAt: 0,
+      outfitPending: false,
+      /** Last fishing news ("🎣 …") relayed for this player. */
+      announceAt: 0,
+      /** Players this one is sent in a crowded room (nearest visibleMax); null = everyone. */
+      inView: null,
+      /** Last message of any kind (silent connections are let go when the room is crowded). */
+      lastMsgAt: Date.now(),
+      /** Where activity was last seen (anti idle bots, ACTIVE_MOVE). */
+      anchorX: 0,
+      anchorZ: 0,
+      /** Last state frame; last sudden position jump and how many (admin panel). */
+      stateAt: 0,
+      jumpAt: 0,
+      jumps: 0,
+      /** Chat lines dropped (too fast / repeated) and mutes, for the admin panel. */
+      chatDrops: 0,
+      chatMutes: 0,
+      /** Chat lines with profane words masked. */
+      chatMasked: 0,
       /** Pending invitations we sent: target id → { activity, at }. */
       invites: new Map(),
       /** Treated to an ice cream until (ms). */
@@ -698,8 +1023,10 @@ export function createRealm(options = {}) {
     welcome.writeUInt8(MSG_WELCOME, 0);
     welcome.writeUInt32LE(player.id, 1);
     send(ws, welcome);
-    // Bootstrap the newcomer with everyone already here.
-    const present = [...room.players].filter((p) => p !== player && p.state && near(p, player));
+    // Bootstrap the newcomer with everyone already here (crowded: the nearest;
+    // its position is not known yet, so the ones near the spawn point).
+    if (filtered(room)) player.inView = nearest(player, room.players, visibleMax, null, viewDistance);
+    const present = player.inView ? [...player.inView] : [...room.players].filter((p) => p !== player && p.state);
     if (present.length) send(ws, entriesBuffer(present));
     for (const p of room.players) if (p !== player && p.outfit) send(ws, p.outfit);
     for (const p of room.players) if (p !== player && p.name) send(ws, p.name);
@@ -710,6 +1037,7 @@ export function createRealm(options = {}) {
 
     ws.on('message', (data, isBinary) => {
       const now = Date.now();
+      player.lastMsgAt = now;
       if (now - player.windowStart >= 1000) {
         player.windowStart = now;
         player.windowCount = 0;
@@ -728,7 +1056,15 @@ export function createRealm(options = {}) {
         if (buf.length !== 2 + n || n > MAX_OUTFIT_SLOTS) return;
         for (let i = 0; i < n; i++) if (buf[2 + i] > MAX_OUTFIT_ITEM) return;
         player.wanted = Uint8Array.from(buf.subarray(2, 2 + n));
-        applyOutfit(player, { save: true });
+        // Each change goes to the whole room: flipping outfits 40×/s would flood
+        // everyone. Faster changes wait for the tick (only the last one is sent).
+        if (now - player.outfitAt >= OUTFIT_MIN_MS) {
+          player.outfitAt = now;
+          player.outfitPending = false;
+          applyOutfit(player, { save: true });
+        } else {
+          player.outfitPending = true;
+        }
         return;
       }
       if (buf[0] === CLIENT_PROFILE) {
@@ -786,8 +1122,30 @@ export function createRealm(options = {}) {
         return;
       }
       if (!isValidState(buf)) return;
-      // Activity (anti idle bots): position or pose changed since the last frame.
-      if (!player.state || Math.abs(buf.readFloatLE(1) - player.x) + Math.abs(buf.readFloatLE(9) - player.z) > 0.05 || (buf[21] & ANIM_MASK) !== (player.state[21] & ANIM_MASK)) markActive(player);
+      const nx = buf.readFloatLE(1);
+      const nz = buf.readFloatLE(9);
+      const nanim = buf[21] & ANIM_MASK;
+      // Activity (anti idle bots): walked ACTIVE_MOVE m away from where the last
+      // activity was seen (jittering on the spot does not count), or a pose the
+      // player chose (jump, emotes); the automatic "bored" pose does not count.
+      const moved = Math.hypot(nx - player.anchorX, nz - player.anchorZ) >= ACTIVE_MOVE;
+      const posed = !!player.state && nanim !== (player.state[21] & ANIM_MASK) && nanim !== 0 && nanim !== BORED_STATE;
+      if (!player.state || moved || posed) {
+        player.anchorX = nx;
+        player.anchorZ = nz;
+        markActive(player);
+      }
+      // Sudden jumps in position (teleport hacks, or a respawn): no penalty, just
+      // no play-together invitations for JUMP_COOLDOWN_MS, and a count for admins.
+      if (player.state) {
+        const dist = Math.hypot(nx - player.x, nz - player.z);
+        const dt = Math.max(1, now - player.stateAt) / 1000;
+        if (dist >= JUMP_MIN_DIST && dist / dt > JUMP_SPEED) {
+          player.jumpAt = now;
+          player.jumps++;
+        }
+      }
+      player.stateAt = now;
       player.state = Uint8Array.from(buf);
       // Picnic emotes need their item: relay a standing pose otherwise.
       const anim = player.state[21] & ANIM_MASK;
@@ -828,8 +1186,8 @@ export function createRealm(options = {}) {
       socket.destroy();
       return true;
     }
-    const requested = url.searchParams.get('room') ?? 'main';
-    const roomName = ROOM_NAME.test(requested) ? requested : 'main';
+    // Everyone plays in one room: ?room= from the client is ignored.
+    const roomName = SINGLE_ROOM;
     // Limits: total connections, connections per IP, number of open rooms
     // (any ?room= would otherwise open a new room and dodge the per-room cap).
     const ip = clientIp(req);
@@ -844,17 +1202,10 @@ export function createRealm(options = {}) {
     if (block && block.until > Date.now()) return refuse(403, 'Forbidden');
     if (block) blockedIps.delete(ip);
     if (!rooms.has(roomName) && rooms.size >= maxRooms) return refuse(503, 'Service Unavailable');
+    // Reconnect loops (each new connection used to get a fresh chat budget).
+    if (!connectBuckets.take(ip)) return refuse(429, 'Too Many Requests');
     wss.handleUpgrade(req, socket, head, (ws) => onConnection(ws, req, roomName, ip));
     return true;
-  }
-
-  /**
-   * The client's IP: behind a proxy (Render) the first X-Forwarded-For entry,
-   * otherwise the socket address.
-   */
-  function clientIp(req) {
-    const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
-    return forwarded || req.socket.remoteAddress || 'unknown';
   }
 
   /** Online counts for /health and the admin panel. */
@@ -883,6 +1234,16 @@ export function createRealm(options = {}) {
           connectedAt: p.connectedAt,
           x: Math.round(p.x * 10) / 10,
           z: Math.round(p.z * 10) / 10,
+          // Signs for admins to look at (nothing is decided automatically from them).
+          flags: {
+            chatDrops: p.chatDrops,
+            chatMutes: p.chatMutes,
+            chatMasked: p.chatMasked,
+            jumps: p.jumps,
+            earningRate: walletIdOf(p) && wallets.counting(walletIdOf(p)) ? wallets.rate(walletIdOf(p)) : null,
+            sameIp: perIp.get(p.ip) ?? 1,
+            guestBlocked: !p.uid && guestBlocked(p, Date.now()),
+          },
         });
       }
     }
@@ -902,6 +1263,7 @@ export function createRealm(options = {}) {
         if ((id && p.id === id) || (uid && p.uid === uid)) {
           const ip = p.ws.clientIp;
           if (ip) blockedIps.set(ip, { until: Date.now() + ms, uid: code === CLOSE_BANNED ? uid || p.uid : '' });
+          if (code === CLOSE_BANNED) blockGuestsOf(p, uid || p.uid);
           p.ws.close(code, reason);
           count++;
         }
@@ -918,6 +1280,7 @@ export function createRealm(options = {}) {
     else {
       forcedBans.delete(uid);
       for (const [ip, block] of blockedIps) if (block.uid === uid) blockedIps.delete(ip);
+      for (const [k, block] of guestBlocks) if (block.uid === uid) guestBlocks.delete(k);
     }
     banCache.delete(uid);
     return banned ? kick({ uid }, CLOSE_BANNED, 'banned') : 0;
@@ -926,10 +1289,16 @@ export function createRealm(options = {}) {
   const tickTimer = setInterval(tick, tickMs);
   // Drop connections that stopped answering pings (closed laptops, dead NATs).
   const pingTimer = setInterval(() => {
+    const now = Date.now();
     for (const room of rooms.values()) {
+      // Nearly full: free the places of connections that never talk (a real
+      // client sends a heartbeat every few seconds, even in a background tab
+      // at least once a minute). They may reconnect; nobody is blocked.
+      const crowded = room.players.size >= maxPlayersPerRoom * CROWDED_SHARE;
       for (const p of room.players) {
-        if (!p.alive) {
-          p.ws.terminate();
+        if (!p.alive || (crowded && now - p.lastMsgAt > SILENT_MS)) {
+          if (p.alive) p.ws.close(1000, 'idle');
+          else p.ws.terminate();
           continue;
         }
         p.alive = false;
@@ -944,9 +1313,15 @@ export function createRealm(options = {}) {
       if (wallets.accrue(uid)) for (const p of sessionsOf(uid)) sendWallet(p);
       refreshOnline(uid); // pauses wallets whose players went idle
     }
+    updateEarningRates();
     wallets.sweepGuests();
     const now = Date.now();
+    for (const buckets of [chatBuckets, chatIpBuckets, socialBuckets, connectBuckets, profileBuckets, socialMiscBuckets]) buckets.sweep(now);
+    for (const [key, g] of chatGuards) {
+      if (g.muteUntil < now && now - g.lastMuteAt > CHAT_MUTE_MEMORY_MS && !g.recent.some((r) => now - r.at < CHAT_REPEAT_MS) && !g.strikes.some((t) => now - t < CHAT_STRIKE_WINDOW_MS)) chatGuards.delete(key);
+    }
     for (const [ip, block] of blockedIps) if (block.until <= now) blockedIps.delete(ip);
+    for (const [k, block] of guestBlocks) if (block.until <= now) guestBlocks.delete(k);
   }, ACCRUE_MS);
 
   function close() {
@@ -985,5 +1360,5 @@ function cleanText(bytes, maxChars) {
 
 function isValidName(name) {
   const chars = [...name].length;
-  return chars >= NAME_MIN_CHARS && chars <= NAME_MAX_CHARS && /[\p{L}\p{N}]/u.test(name);
+  return chars >= NAME_MIN_CHARS && chars <= NAME_MAX_CHARS && /[\p{L}\p{N}]/u.test(name) && !hasProfanity(name);
 }

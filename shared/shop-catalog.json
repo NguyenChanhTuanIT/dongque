@@ -56,7 +56,9 @@
     { "id": "picnic.rice", "label": "Lúa", "category": "picnic", "icon": "🌾", "emote": 24 },
 
     { "id": "pet.dog", "label": "Chó con", "category": "pet", "icon": "🐶", "emote": 14 },
-    { "id": "pet.cat", "label": "Mèo con", "category": "pet", "icon": "🐱", "emote": 15 },
+    { "id": "pet.dog2", "label": "Chó beagle", "category": "pet", "icon": "🐕", "emote": 15 },
+    { "id": "pet.dog3", "label": "Chó husky", "category": "pet", "icon": "🐺", "emote": 65 },
+    { "id": "pet.dog4", "label": "Chó đốm ôm bom", "category": "pet", "icon": "💣", "emote": 66 },
     { "id": "hobby.flute", "label": "Sáo trúc", "category": "hobby", "icon": "🎶", "emote": 19 },
     { "id": "hobby.fan", "label": "Quạt giấy", "category": "hobby", "icon": "🪭", "emote": 20 },
     { "id": "hobby.book", "label": "Sách truyện", "category": "hobby", "icon": "📖", "emote": 27 },

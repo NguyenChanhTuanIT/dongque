@@ -49,7 +49,7 @@ const MODULE_LABELS: Record<(typeof TOGGLEABLE_MODULES)[number], string> = {
   castles: 'Lâu đài cát',
   grass: 'Cỏ',
   blockers: 'Rào chắn đường',
-  ufo: 'UFO',
+  ufo: 'Chó con (thay UFO)',
   alien: 'Người ngoài hành tinh',
   sign: 'Biển báo',
   cats: 'Mèo',
@@ -58,7 +58,7 @@ const MODULE_LABELS: Record<(typeof TOGGLEABLE_MODULES)[number], string> = {
 };
 
 const PIECE_LABELS: Record<(typeof SECRET_PIECES)[number], string> = {
-  ufo: 'UFO',
+  ufo: 'Chó con (thay UFO)',
   alien: 'Người ngoài hành tinh',
   cats: 'Mèo',
   sloth: 'Con lười',

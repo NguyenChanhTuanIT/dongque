@@ -1,7 +1,7 @@
 import { events } from '../core/events';
 import { DEFAULT_CONFIG, type SceneConfig } from '../config/schema';
 import { isConfigFromServer } from '../config/store';
-import { EMOTES } from '../scene/emotes';
+import { EMOTES, emoteKeyHtml } from '../scene/emotes';
 import { DEFAULT_OUTFIT, PRESETS, SLOTS, sanitizeOutfit, type Outfit } from '../scene/appearance';
 import { chosenName, displayName } from '../social/presence';
 import { currentUser, isLoginAvailable, savedName, setName, signOut, watchUser } from '../social/auth';
@@ -73,7 +73,12 @@ function menuItem(menu: HTMLElement, icon: string, label: string): HTMLButtonEle
 
 /** Credit for the original work; fixed, not part of the remote config. */
 const ORIGINAL_CREDIT =
-  'Lấy cảm hứng và phát triển tiếp từ <em>Relax Afternoon</em>, một thử nghiệm WebGL của <a href="https://vlucendo.com" rel="noreferrer" target="_blank" class="link2">Vicente Lucendo</a>.';
+  'Lấy cảm hứng và phát triển tiếp từ <em>Relax Afternoon</em>, một thử nghiệm WebGL của <a href="https://vlucendo.com" rel="noreferrer" target="_blank" class="link2">Vicente Lucendo</a>. Bản gốc: <a href="https://summer-afternoon.vlucendo.com" rel="noreferrer" target="_blank" class="link2">summer-afternoon.vlucendo.com</a>' +
+  '<br>Mô hình chú chó: <a href="https://sketchfab.com/3d-models/doggy-meme-dog-ps1-8f9361ab396e4c21a53bc50a57a740cd" rel="noreferrer" target="_blank" class="link2">“Doggy Meme Dog PS1”</a> của <a href="https://sketchfab.com/rukitu" rel="noreferrer" target="_blank" class="link2">rukitu</a>, ' +
+  '<a href="https://sketchfab.com/3d-models/dog-puppy-72331763040e4314b154f84348fe0957" rel="noreferrer" target="_blank" class="link2">“Dog Puppy”</a> của <a href="https://sketchfab.com/kenchoo" rel="noreferrer" target="_blank" class="link2">kenchoo</a>, ' +
+  '<a href="https://sketchfab.com/yarelon111" rel="noreferrer" target="_blank" class="link2">“Dog”</a> của Yarelon, ' +
+  '<a href="https://sketchfab.com/jessica_magno" rel="noreferrer" target="_blank" class="link2">“Low Poly Dog”</a> của Jéssica Magno (đã đổi định dạng vật liệu), giấy phép <a href="https://creativecommons.org/licenses/by/4.0/" rel="noreferrer" target="_blank" class="link2">CC BY 4.0</a>; ' +
+  '<a href="https://sketchfab.com/hamsterspit" rel="noreferrer" target="_blank" class="link2">“Dog With Bomb”</a> của hamsterspit, giấy phép <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/" rel="noreferrer" target="_blank" class="link2">CC BY-NC-ND 4.0</a> (phi thương mại).';
 
 type InfoName = 'about' | 'congrats';
 interface InfoContent {
@@ -168,7 +173,7 @@ export class UiController {
     const emoteButton = navButton('emote (E)');
     const emoteMenu = this.navMenu(emoteButton, 'Biểu cảm');
     EMOTE_MENU.forEach((label, i) => {
-      const item = menuItem(emoteMenu.menu, EMOTES[i].key ? `<kbd>${EMOTES[i].key}</kbd>` : '<kbd class="together">♥</kbd>', label);
+      const item = menuItem(emoteMenu.menu, emoteKeyHtml(EMOTES[i]), label);
       item.addEventListener('click', () => events.emit('webgl_character_emote', i + 1));
     });
     // Picnic emotes (fishing, guitar, kite, ice cream) need their item: the menu
@@ -633,7 +638,7 @@ export class UiController {
       // Also after sign-up / sign-in with a saved name (no rename pending).
       else if (code === NOTICE_NAME_TAKEN) say('Tên này đang có người dùng hoặc không được phép, chọn tên khác nhé.');
       else if (!pending) return;
-      else if (code === NOTICE_BAD_NAME) say(`Tên không hợp lệ (${NAME_MIN_CHARS}–${NAME_MAX_CHARS} ký tự, có chữ hoặc số).`);
+      else if (code === NOTICE_BAD_NAME) say(`Tên không hợp lệ (${NAME_MIN_CHARS}–${NAME_MAX_CHARS} ký tự, có chữ hoặc số, không dùng từ ngữ thô tục).`);
       else if (code === NOTICE_LOGIN_UNAVAILABLE) say('Máy chủ chưa bật tài khoản (FIREBASE_PROJECT_ID).');
       else return;
       pending = '';

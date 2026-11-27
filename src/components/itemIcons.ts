@@ -155,14 +155,6 @@ const ITEM_ICONS: Record<string, string> = {
       path('M21 29 C21 27 27 27 27 29 C27 31 25 32 24 32 C23 32 21 31 21 29 Z', INK) +
       `<path d="M24 32 V35 M21 36 Q24 38 27 36" fill="none" ${LINE}/>`,
   ),
-  'pet.cat': svg(
-    path('M10 9 L19 15 L13 22 Z', '#d9893b') + path('M38 9 L29 15 L35 22 Z', '#d9893b') +
-      path('M24 13 C33 13 39 19 39 27 C39 36 32 41 24 41 C16 41 9 36 9 27 C9 19 15 13 24 13 Z', '#d9893b') +
-      `<path d="M20 15 L21 20 M24 14 V19 M28 15 L27 20" fill="none" stroke="#a2602a" stroke-width="2" stroke-linecap="round"/>` +
-      path('M18.5 24 C19 21.5 21.5 21.5 22 24 C21.5 26.5 19 26.5 18.5 24 Z', '#a6c93a') + path('M26 24 C26.5 21.5 29 21.5 29.5 24 C29 26.5 26.5 26.5 26 24 Z', '#a6c93a') +
-      path('M22.5 29 H25.5 L24 31 Z', '#e8949c') +
-      `<path d="M24 31 Q22 34 20 33 M24 31 Q26 34 28 33 M8 28 L16 29 M8 32 L16 31 M40 28 L32 29 M40 32 L32 31" fill="none" ${LINE}/>`,
-  ),
   'hobby.flute': svg(
     `<g transform="rotate(-35 24 24)">` +
       `<rect x="4" y="20.5" width="40" height="7" rx="3.5" fill="#d9b26a" ${LINE}/>` +

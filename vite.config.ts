@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createRealm } from './server/realm.mjs';
 import { createAdminApi } from './server/admin-api.mjs';
 import { createFeedback } from './server/feedback.mjs';
+import { createClientIp } from './server/client-ip.mjs';
 
 /**
  * Runs the multiplayer relay (server/realm.mjs) inside `vite dev` and
@@ -27,8 +28,10 @@ function multiplayerRelay(firebaseProjectId: string): Plugin {
   const attach = (httpServer: import('node:http').Server | null) => {
     realm?.close();
     feedback?.flush();
-    realm = createRealm({ firebaseProjectId });
-    feedback = createFeedback({ dataDir: fileURLToPath(new URL('./server/data', import.meta.url)), projectId: firebaseProjectId });
+    // No proxy in development: the socket address is the client (same as TRUST_PROXY=0).
+    const clientIp = createClientIp({ trustProxy: 0 });
+    realm = createRealm({ firebaseProjectId, clientIp });
+    feedback = createFeedback({ clientIp, dataDir: fileURLToPath(new URL('./server/data', import.meta.url)), projectId: firebaseProjectId });
     adminApi = createAdminApi({ realm, feedback, projectId: firebaseProjectId });
     httpServer?.on('upgrade', (req, socket, head) => realm?.handleUpgrade(req, socket, head));
     httpServer?.on('close', () => {

@@ -22,6 +22,8 @@ interface WalletStatus {
   /** Time counted towards the current milestone. */
   stageSec: number;
   counting: boolean;
+  /** Share of online time counted: below 1 when many wallets earn from this network (server MAX_EARNING_PER_IP). */
+  rate?: number;
   tiers: Array<{ minutes: number; flowers: number; claimed: boolean }>;
   /** Guest wallet of this tab (lost when it closes unless the player signs up). */
   guest?: boolean;
@@ -119,7 +121,7 @@ export class RewardsPanel {
     const w = this.wallet;
     const tier = w?.tiers[w.stage];
     if (!w || !tier) return 0;
-    const running = w.counting && !document.hidden ? Math.floor((performance.now() - this.receivedAt) / 1000) : 0;
+    const running = w.counting && !document.hidden ? Math.floor(((performance.now() - this.receivedAt) / 1000) * (w.rate ?? 1)) : 0;
     return Math.min(tier.minutes * 60, w.stageSec + running);
   }
 
@@ -146,8 +148,13 @@ export class RewardsPanel {
       );
     }
 
+    // Today's cell is the check-in button until it is claimed.
     const week = w.week
-      .map((d) => `<li class="${d.today ? 'today' : ''}${d.checked ? ' checked' : ''}"><b>${d.label}</b><i>${d.checked ? '✓' : `+${d.flowers}`}</i></li>`)
+      .map((d) =>
+        d.today && !w.checkedIn
+          ? `<li class="today claim"><button type="button" data-action="${REWARD_CHECKIN}" title="Điểm danh +${d.flowers}"><b>${d.label}</b><i>+${d.flowers}</i></button></li>`
+          : `<li class="${d.today ? 'today' : ''}${d.checked ? ' checked' : ''}"><b>${d.label}</b><i>${d.checked ? '✓' : `+${d.flowers}`}</i></li>`,
+      )
       .join('');
     const label = (minutes: number) => (minutes >= 60 ? `${minutes / 60} tiếng` : `${minutes} phút`);
     // Milestones one after the other: claimed ✓, current, still locked.
@@ -167,8 +174,8 @@ export class RewardsPanel {
         : `<button type="button" disabled>Còn ${left} phút</button>`;
       current = `
         <div class="rewards-progress" role="progressbar" aria-valuemin="0" aria-valuemax="${tier.minutes}" aria-valuenow="${Math.min(tier.minutes, done)}"><div style="width:${Math.min(100, Math.floor((sec / goal) * 100))}%"></div></div>
-        <ul class="rewards-tiers"><li><span>Mốc ${w.stage + 1}/${w.tiers.length}: ${Math.min(done, tier.minutes)}/${tier.minutes} phút</span>${action}</li></ul>
-        <p class="rewards-note">${ready ? 'Nhận quà để bắt đầu mốc tiếp theo.' : ''}</p>`;
+        <ul class="rewards-tiers"><li>${action}</li></ul>
+        <p class="rewards-note">${ready ? 'Nhận quà để bắt đầu mốc tiếp theo.' : (w.rate ?? 1) < 1 ? `Mạng này đang có nhiều người cùng nhận quà online nên thời gian được tính chậm hơn (×${String(w.rate).replace('.', ',')}).` : ''}</p>`;
     }
     const toast = performance.now() < this.toast.until ? this.toast.text : '';
     return `
@@ -177,9 +184,6 @@ export class RewardsPanel {
       <div class="look-group">
         <span>Điểm danh hằng ngày (T7, CN được gấp đôi)</span>
         <ol class="rewards-week">${week}</ol>
-        ${w.checkedIn
-          ? '<button type="button" disabled>Hôm nay đã điểm danh ✓</button>'
-          : `<button type="button" class="primary" data-action="${REWARD_CHECKIN}">Điểm danh +${flowers(w.checkinFlowers)}</button>`}
       </div>
       <div class="look-group">
         <span>Quà online (lần lượt từng mốc)</span>
